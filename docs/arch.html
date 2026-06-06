@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --indigo:#6366f1; --indigo-deep:#4f46e5;
+    --border:#e8eaf0; --muted:#8b90a0;
+    --shadow:0 2px 6px rgba(40,44,80,.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:#ffffff;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;
+    color:#2a2d3a; padding:28px;
+  }
+  .diagram{width:1044px;margin:0 auto;}
+  h1{font-size:22px;font-weight:700;margin:0 0 22px;letter-spacing:-.2px;}
+
+  .box{
+    background:#fff;border:1px solid var(--border);border-radius:12px;
+    box-shadow:var(--shadow);padding:14px 18px;
+  }
+  .box .title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}
+  .box .sub{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4;}
+
+  .tint-indigo{background:#f3f2ff;border-color:#dedbff;}
+  .tint-amber{background:#fff2dc;border-color:#f4dfb6;}
+  .tint-green{background:#e7f6ec;border-color:#cdebd6;}
+
+  .row{display:flex;align-items:center;justify-content:center;}
+
+  .arrow-labels{display:flex;flex-direction:column;gap:3px;align-items:flex-start;}
+  .arrow-labels span{
+    font-size:10.5px;color:var(--muted);background:#f6f7fb;
+    border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-weight:600;
+  }
+
+  .container{
+    border:1px solid var(--border);border-radius:14px;background:#fafbff;
+    box-shadow:var(--shadow);padding:16px 18px 18px;
+  }
+  .container > .clabel{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+  .inner-row{display:flex;gap:14px;}
+  .inner-row .box{flex:1;}
+
+  .header-tint .title{padding:5px 9px;border-radius:7px;display:inline-flex;}
+  .t-orch .title{background:#eceef5;}
+  .t-agents .title{background:#f3f2ff;}
+  .t-data .title{background:#e6f7ee;}
+
+  .side-wrap{display:flex;align-items:center;gap:0;}
+  .openai-box{width:190px;}
+</style>
+</head>
+<body>
+<div class="diagram">
+  <h1>System Architecture</h1>
+
+  <!-- 1. Browser -->
+  <div class="row">
+    <div class="box tint-indigo" style="width:560px;">
+      <div class="title">🖥️ Browser — index.html</div>
+      <div class="sub">group-chat UI · scorecard · @-mention input</div>
+    </div>
+  </div>
+
+  <!-- arrow 1 -> 3 with labels -->
+  <div class="row" style="gap:18px;">
+    <svg width="60" height="74" viewBox="0 0 60 74">
+      <defs>
+        <marker id="ah" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
+        </marker>
+      </defs>
+      <line x1="30" y1="4" x2="30" y2="64" stroke="#6366f1" stroke-width="2" marker-end="url(#ah)"/>
+    </svg>
+    <div class="arrow-labels">
+      <span>POST /session</span>
+      <span>GET /stream (SSE)</span>
+      <span>POST /message</span>
+    </div>
+  </div>
+
+  <!-- 3. FastAPI container + side openai -->
+  <div class="side-wrap" style="justify-content:center;">
+    <div class="container" style="width:720px;">
+      <div class="clabel">⚙️ FastAPI backend (app/)</div>
+      <div class="inner-row">
+        <div class="box header-tint t-orch">
+          <div class="title">🎯 Orchestrator</div>
+          <div class="sub">turn-taking loop + event bus</div>
+        </div>
+        <div class="box header-tint t-agents">
+          <div class="title">🤖 Agents</div>
+          <div class="sub">Router · Planner · Workers · Critic</div>
+        </div>
+        <div class="box header-tint t-data">
+          <div class="title">🗄️ Data layer</div>
+          <div class="sub">TravelDataProvider → MockProvider</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- double arrow Agents <-> OpenAI -->
+    <svg width="70" height="60" viewBox="0 0 70 60">
+      <defs>
+        <marker id="ah2" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
+        </marker>
+      </defs>
+      <line x1="58" y1="30" x2="10" y2="30" stroke="#6366f1" stroke-width="2" marker-end="url(#ah2)"/>
+      <line x1="12" y1="30" x2="60" y2="30" stroke="#6366f1" stroke-width="2" marker-end="url(#ah2)"/>
+    </svg>
+
+    <div class="box tint-green openai-box">
+      <div class="title">🧠 OpenAI</div>
+      <div class="sub">tool-calling · LLM-as-judge</div>
+    </div>
+  </div>
+
+  <!-- arrow down to Weave -->
+  <div class="row">
+    <svg width="60" height="58" viewBox="0 0 60 58" style="margin-right:200px;">
+      <defs>
+        <marker id="ah3" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#6366f1"/>
+        </marker>
+      </defs>
+      <line x1="30" y1="2" x2="30" y2="48" stroke="#6366f1" stroke-width="2" marker-end="url(#ah3)"/>
+    </svg>
+  </div>
+
+  <!-- 4. Weave -->
+  <div class="row">
+    <div class="box tint-amber" style="width:560px;margin-right:200px;">
+      <div class="title">📊 W&amp;B Weave</div>
+      <div class="sub">traces every @weave.op() · Evaluation · leaderboard + ablation</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

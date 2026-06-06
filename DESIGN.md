@@ -3,6 +3,8 @@
 How we turn the scripted demo (`index.html`) into a real multi-agent system, step by step,
 with concrete stack choices and copy-pasteable code skeletons. Scoped for a 6-hour hackathon.
 
+![TripCrew UI — multi-agent group chat with a live evaluation scorecard](design.png)
+
 ---
 
 ## 1. Goals & non-goals
@@ -44,6 +46,8 @@ python-dotenv
 ---
 
 ## 3. Architecture
+
+![System architecture — Browser → FastAPI (Orchestrator/Agents/Data) → W&B Weave, with Agents ↔ OpenAI](docs/arch.png)
 
 ```
  Browser (index.html)
@@ -174,6 +178,8 @@ Each role (`router.py`, `planner.py`, …) is just a system prompt + which tools
 A hand-written loop. The **Router** decides who speaks next; the **Critic** can send the
 plan back for rework. An async event bus pushes each message to the SSE stream as it happens.
 
+![Orchestration loop — Router → Planner → parallel Workers → Itinerary → Critic, with a rework loop back to Planner](docs/flow.png)
+
 ```python
 # app/orchestrator.py  (sketch)
 @weave.op()
@@ -264,6 +270,8 @@ This is robust (no cancelled HTTP/stream state) and covers ~90% of the demo valu
 ### Step 6 — Evaluation + Weave (the differentiator) (60 min)
 
 Three layers, mostly objective:
+
+![Evaluation — 3 scoring layers (Outcome / Process / Attribution) plus a With-Critic vs No-Critic ablation](docs/eval.png)
 
 ```python
 # app/eval.py
