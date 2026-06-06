@@ -1,0 +1,15 @@
+# Core (needed to run)
+fastapi==0.136.3
+uvicorn[standard]
+pydantic>=2.7
+python-dotenv
+
+# Real LLM mode (USE_MOCK_LLM=0)
+openai>=1.40
+
+# Optional infra — code degrades gracefully if absent
+redis>=5            # HOT TripState store (else in-memory fallback)
+weave               # observability/eval (set WEAVE_PROJECT to enable)
+
+# CopilotKit bridge (integration seam — wire with frontend)
+# copilotkit
