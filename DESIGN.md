@@ -4,53 +4,54 @@
 
 Standard travel planners are static text wrappers. **SyncTrip** is a dynamic, consumer-centric travel dashboard that acts as a group mediator, logistics broker, and real-time trip fixer.
 
-Our goals for this build are:
+Our goals for this hackathon build are:
 
 - **Eliminate Friction:** Use AI to negotiate conflicting group preferences mathematically.
 - **Bridge AI with UI:** Move beyond text chatbots by using CopilotKit to render functional booking forms and interactive maps directly in the UI.
 - **Real-Time Adaptability:** Prove that a multi-agent swarm can monitor live weather/infrastructure APIs and autonomously reroute a trip without human panic.
-- **Live Multiplayer State:** Support shared session links so multiple friends can watch the itinerary build live simultaneously.
+- **Enterprise State Persistence:** Implement a professional Hot/Cold database pipeline so users can collaborate live without lag, and securely save trips to their accounts permanently.
 
 ---
 
 ## 2. The Tech Stack
 
-- **Frontend:** Next.js v16.2 (App Router), Tailwind CSS, Shadcn UI.
-- **UI/AI Bridge:** CopilotKit v0.1.94 (Handles the chat interface, state synchronization, and component injection).
-- **Backend Framework:** Python FastAPI v0.136.1 (Handles fast API execution and WebSocket/SSE streaming).
-- **Orchestration:** LangGraph (Perfect for multi-agent loops and tool calling).
-- **Data Storage / State Management:** **Redis**.
-  - _Why Redis?_ We need lightning-fast reads and writes for live map updates. By using LangGraph's `RedisSaver` (or standard Redis hash sets), the agents can asynchronously update the `TripState` in the background. It provides instant session persistence, allows pub/sub event broadcasting to the UI, and prevents data loss if the browser refreshes.
+We are optimizing for extreme speed during active sessions, reliable long-term storage, and deep React integration.
 
+- **Frontend:** Next.js (App Router), Tailwind CSS, Shadcn UI.
+- **UI/AI Bridge:** CopilotKit (Handles the chat interface, state synchronization, and component injection).
+- **Backend Framework:** Python FastAPI (Handles fast API execution and WebSocket/SSE streaming).
+- **Orchestration:** LangGraph (Using `langgraph-checkpoint-redis` for active threads).
+- **Data Storage (The Hot/Cold Pipeline):** \* **HOT DB (Redis):** Acts as the high-speed checkpointer for LangGraph. As agents debate and write state updates every millisecond, Redis prevents I/O bottlenecks and streams changes instantly to the UI.
+  - **COLD DB (PostgreSQL via Supabase):** Acts as the long-term relational database. When a trip is finalized, the JSON payload is moved from Redis to a permanent `trips` table in Postgres, linked to the user's Auth ID.
 - **External Data APIs (The Knowledge Layer):**
-  - _Flights & Transit:_ **Amadeus Travel API** (core flight/rail booking) and **AeroDataBox** (real-time flight tracking, delay indexes, and aviation data).
-  - _Mapping & Pathing:_ **Mapbox GL JS / Directions API** (drawing visual vector paths on the dashboard).
-  - _Attractions & POIs:_ **Geoapify Places API** (for powerful "distance-reachable" points of interest) and **Amadeus Tours & Activities API** (fetching real-world museum/sightseeing availability).
-  - _Accommodations:_ **Booking.com API** or **Expedia Rapid API**.
-  - _Environment:_ **OpenWeatherMap API** (triggering weather disruptions).
+  - _Flights & Transit:_ Amadeus Travel API and AeroDataBox.
+  - _Mapping & Pathing:_ Mapbox GL JS & Mapbox Directions API.
+  - _Attractions & POIs:_ Geoapify Places API.
+  - _Environment:_ OpenWeatherMap API.
 
 ---
 
-## 3. System Architecture
+## 3. System Architecture (The Data Flow)
 
-The application runs on a centralized Redis state mutation pattern. The frontend displays the state, CopilotKit acts as the courier, and the Python backend acts as the brain.
+The application decouples active AI reasoning from permanent data storage to maintain a fluid user experience.
 
-1. **User Input:** User types a message or clicks a UI button in Next.js.
-2. **State Transfer:** CopilotKit packages the prompt and sends it to the FastAPI backend along with the user's `session_id`.
-3. **Agent Swarm:** The LangGraph Supervisor pulls the current `TripState` from **Redis** using the `session_id`, evaluates the missing parameters, and routes execution to the correct worker agent (e.g., Diplomat, Logistician).
-4. **Tool Execution:** The agent calls external travel APIs (Amadeus, Geoapify, etc.).
-5. **State Mutation:** The agent overwrites the updated `TripState` JSON block back into **Redis**.
-6. **UI Injection:** FastAPI streams the updated state back via CopilotKit. The Next.js dashboard instantly updates the Mapbox UI, Calendar UI, and renders native React components (like a booking form) inside the chat.
+1. **User Input:** User sends a prompt via the CopilotKit chat in Next.js.
+2. **Hot Processing:** FastAPI receives the prompt. LangGraph pulls the active thread from **Redis**, evaluates the missing constraints, and routes the task to a specific agent.
+3. **Tool Execution:** The agent calls external travel APIs (Amadeus, Geoapify).
+4. **Hot State Mutation:** The agent overwrites the updated `TripState` in **Redis**.
+5. **UI Injection:** FastAPI streams the updated state back via CopilotKit. The Next.js dashboard instantly updates the Mapbox UI and renders native React booking components.
+6. **Cold Storage Sync (Action Trigger):** When the user clicks "Save Trip" or the trip starts, a background FastAPI task pulls the final JSON from Redis and commits it to **Supabase (PostgreSQL)** for permanent storage.
 
 ---
 
 ## 4. Shared State Schema (`TripState`)
 
-This JSON object is the absolute contract between the frontend, the backend, and Redis. All agents read from and write to this exact structure.
+This JSON object is the absolute contract between the frontend, the backend, and the databases.
 
 ```json
 {
   "session_id": "uuid-1234",
+  "user_auth_id": "user-5678",
   "group_profile": {
     "compiled_constraints": {
       "budget_ceiling_usd": 0,
@@ -77,9 +78,8 @@ This JSON object is the absolute contract between the frontend, the backend, and
     "system_notifications": []
   }
 }
-```
 
-5. The Agent Cast (The Swarm)
+#5. The Agent Cast (The Swarm)
 
 The backend logic is divided into specialized roles to prevent LLM context pollution.
 
@@ -92,3 +92,4 @@ The backend logic is divided into specialized roles to prevent LLM context pollu
 - The Weather & Event Sentinel: The background monitor. Queries OpenWeatherMap and AeroDataBox against the active itinerary. If it detects rain during an OUTDOOR block or a flight delay, it flags the Redis state.
 
 - The Adaptive Reshuffler: The live fixer. Triggered by the Sentinel. It queries Amadeus Tours & Activities for nearby INDOOR alternatives, rewrites the calendar block in Redis, and pushes a UI notification to the user.
+```
