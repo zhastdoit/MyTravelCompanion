@@ -42,6 +42,32 @@ def detect_mention(text: str) -> str | None:
     return None
 
 
+# Display metadata + phrasing so each agent "speaks" a visible line in the chat box.
+AGENT_META = {
+    "supervisor":  ("🧭", "Supervisor"),
+    "diplomat":    ("🤝", "Diplomat"),
+    "logistician": ("🧰", "Logistician"),
+    "sentinel":    ("🌦️", "Sentinel"),
+    "reshuffler":  ("🔀", "Reshuffler"),
+    "user":        ("🧑", "You"),
+}
+_TOOL_ICON = {"update_constraints": "🤝", "query_amadeus": "✈️", "query_geoapify": "📍",
+              "check_weather": "🌦️", "reshuffle_block": "🔧"}
+
+
+def _meta(a: str) -> tuple[str, str]:
+    return AGENT_META.get(a, ("🤖", a.title()))
+
+
+def _clean(s: str) -> str:
+    return re.sub(r"^\[[^\]]*\]\s*", "", s or "").strip()   # drop "[Amadeus mock] " prefixes
+
+
+def _say(chat: list, agent: str, text: str) -> None:
+    em, nm = _meta(agent)
+    chat.append({"agent": agent, "emoji": em, "name": nm, "text": text})
+
+
 @dataclass
 class Decision:
     kind: str                 # "transfer" | "tool" | "message"
@@ -175,7 +201,7 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
 
     # @-mention routes straight to that agent; otherwise the Supervisor decides.
     entry = detect_mention(user_message) or ENTRY_AGENT
-    active, executed, trail = entry, set(), []
+    active, executed, trail, chat = entry, set(), [], []
     if entry != ENTRY_AGENT:
         trail.append({"agent": "user", "action": f"@{entry} (direct)"})
     reply, final_agent = "", active
@@ -188,10 +214,14 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
                      f"${cost.CAP:.2f}). Stopping to protect your budget. "
                      f"Reset the session to continue.")
             trail.append({"agent": active, "action": "capped", "result": reply})
+            _say(chat, active, reply)
             break
         d = _decide(active, state, executed, transcript, session_id)
         if d.kind == "transfer":
             trail.append({"agent": active, "action": f"→ {d.target}"})
+            if d.target != "supervisor":            # announce who's being brought in
+                tem, tnm = _meta(d.target)
+                _say(chat, active, f"Bringing in the {tnm} {tem}…")
             active = d.target
             transfers_since_work += 1
             if transfers_since_work >= LOOP_LIMIT:   # agents ping-ponging with no progress
@@ -213,6 +243,7 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
             result = WORK_TOOLS[d.tool](state, **(d.args or {}))
             executed.add(d.tool)
             transfers_since_work = 0
+            _say(chat, active, f"{_TOOL_ICON.get(d.tool, '•')} {_clean(result)}")
             if USE_MOCK_LLM:
                 transcript.append({"role": "assistant",
                                    "content": f"[{active}:{d.tool}] {result}"})
@@ -227,6 +258,7 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         else:
             transcript.append({"role": "assistant", "content": reply})
         trail.append({"agent": active, "action": "reply", "result": reply})
+        _say(chat, active, reply)
         break
 
     # Fallback: the crew couldn't converge (hit MAX_STEPS or a handoff loop) — turn to the human.
@@ -236,6 +268,7 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         final_agent = active
         transcript.append({"role": "assistant", "content": reply})
         trail.append({"agent": active, "action": "ask_user", "result": reply})
+        _say(chat, active, reply)
 
     save_state(state)
     return {
@@ -243,6 +276,7 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         "reply": reply,
         "active_agent": final_agent,
         "trail": trail,
+        "chat": chat,
         "state": state.model_dump(),
         "store_backend": BACKEND,
         "llm_mode": "mock" if USE_MOCK_LLM else "openai",
