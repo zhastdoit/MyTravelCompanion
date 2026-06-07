@@ -1,4 +1,4 @@
-# SyncTrip — Multi-Agent Travel Orchestration
+# My Travel Companion — Multi-Agent Travel Orchestration
 
 A team of AI agents that **plan, book, and adapt a trip together** — negotiating a group's
 conflicting preferences, composing a comprehensive day-by-day itinerary, surfacing booking
