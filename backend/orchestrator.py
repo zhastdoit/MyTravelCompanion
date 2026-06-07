@@ -16,6 +16,7 @@ from store import load_state, save_state, BACKEND
 from agents import AGENTS, ENTRY_AGENT
 from tools import WORK_TOOLS, WORK_TOOL_SCHEMAS, transfer_schema
 from obs import op
+import cost
 
 USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "1") == "1"
 MAX_STEPS = 12
@@ -107,7 +108,8 @@ def _mock_decision(active: str, state: TripState, executed: set, transcript: lis
 # --------------------------- real LLM (OpenAI) -----------------------------
 
 @op(name="llm_decide")
-def _real_decision(active: str, state: TripState, executed: set, transcript: list[dict]) -> Decision:
+def _real_decision(active: str, state: TripState, executed: set, transcript: list[dict],
+                   session_id: str) -> Decision:
     from openai import OpenAI  # imported lazily so mock mode needs no openai install
     client = OpenAI()
     agent = AGENTS[active]
@@ -119,6 +121,9 @@ def _real_decision(active: str, state: TripState, executed: set, transcript: lis
     resp = client.chat.completions.create(
         model=agent.model, messages=messages,
         tools=tools or None, temperature=0.3)
+    if resp.usage:  # meter spend for the per-session cap
+        cost.add_usage(session_id, agent.model,
+                       resp.usage.prompt_tokens, resp.usage.completion_tokens)
     msg = resp.choices[0].message
     if msg.tool_calls:
         tc = msg.tool_calls[0]
@@ -135,9 +140,9 @@ def _real_decision(active: str, state: TripState, executed: set, transcript: lis
     return Decision("message", content=msg.content or "")
 
 
-def _decide(active, state, executed, transcript) -> Decision:
+def _decide(active, state, executed, transcript, session_id) -> Decision:
     return _mock_decision(active, state, executed, transcript) if USE_MOCK_LLM \
-        else _real_decision(active, state, executed, transcript)
+        else _real_decision(active, state, executed, transcript, session_id)
 
 
 # ------------------------------- main loop ---------------------------------
@@ -152,7 +157,13 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict
     reply, final_agent = "", active
 
     for _ in range(MAX_STEPS):
-        d = _decide(active, state, executed, transcript)
+        if not USE_MOCK_LLM and cost.over_cap(session_id):
+            reply = (f"⚠️ Session spend cap reached (${cost.spent(session_id):.2f} / "
+                     f"${cost.CAP:.2f}). Stopping to protect your budget. "
+                     f"Reset the session to continue.")
+            trail.append({"agent": active, "action": "capped", "result": reply})
+            break
+        d = _decide(active, state, executed, transcript, session_id)
         if d.kind == "transfer":
             trail.append({"agent": active, "action": f"→ {d.target}"})
             active = d.target
@@ -185,8 +196,11 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict
         "state": state.model_dump(),
         "store_backend": BACKEND,
         "llm_mode": "mock" if USE_MOCK_LLM else "openai",
+        "usd_spent": cost.spent(session_id),
+        "usd_cap": cost.CAP,
     }
 
 
 def reset(session_id: str) -> None:
     _transcripts.pop(session_id, None)
+    cost.reset(session_id)

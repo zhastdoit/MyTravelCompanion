@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from store import load_state, BACKEND
 from orchestrator import run_turn, reset, USE_MOCK_LLM
+import cost
 
 app = FastAPI(title="SyncTrip Agent Server")
 app.add_middleware(
@@ -34,7 +35,15 @@ class ChatIn(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "llm_mode": "mock" if USE_MOCK_LLM else "openai", "store": BACKEND}
+    return {"ok": True, "llm_mode": "mock" if USE_MOCK_LLM else "openai",
+            "store": BACKEND, "session_usd_cap": cost.CAP}
+
+
+@app.get("/api/cost/{sid}")
+def get_cost(sid: str):
+    return {"session_id": sid, "usd_spent": cost.spent(sid),
+            "usd_cap": cost.CAP, "usd_remaining": cost.remaining(sid),
+            "over_cap": cost.over_cap(sid)}
 
 
 @app.post("/api/chat")

@@ -5,7 +5,11 @@ hand off to. No orchestration framework — handoffs happen via `transfer_to_*` 
 resolved by orchestrator.py.
 """
 from __future__ import annotations
+import os
 from dataclasses import dataclass, field
+
+SMART = os.getenv("MODEL_SMART", "gpt-4o")        # reasoning agents
+FAST = os.getenv("MODEL_FAST", "gpt-4o-mini")     # routing / monitoring agents
 
 
 @dataclass
@@ -24,7 +28,7 @@ _STATE_RULES = (
 
 AGENTS: dict[str, Agent] = {
     "supervisor": Agent(
-        name="supervisor", model="gpt-4o-mini",
+        name="supervisor", model=FAST,
         instructions=(
             "You are the Supervisor — a lightweight router. " + _STATE_RULES +
             " Inspect TripState for the most important MISSING piece and hand off:\n"
@@ -35,7 +39,7 @@ AGENTS: dict[str, Agent] = {
         can_transfer_to=["diplomat", "logistician", "sentinel"]),
 
     "diplomat": Agent(
-        name="diplomat", model="gpt-4o",
+        name="diplomat", model=SMART,
         instructions=(
             "You are the Consensual Diplomat — the group peer-planner. " + _STATE_RULES +
             " From the (possibly conflicting) chat inputs, negotiate a single set of group "
@@ -46,7 +50,7 @@ AGENTS: dict[str, Agent] = {
         can_transfer_to=["supervisor"]),
 
     "logistician": Agent(
-        name="logistician", model="gpt-4o",
+        name="logistician", model=SMART,
         instructions=(
             "You are the Multi-Modal Logistician — the data broker. " + _STATE_RULES +
             " Using the constraints, call query_amadeus for flights and query_geoapify to add "
@@ -56,7 +60,7 @@ AGENTS: dict[str, Agent] = {
         can_transfer_to=["supervisor"]),
 
     "sentinel": Agent(
-        name="sentinel", model="gpt-4o-mini",
+        name="sentinel", model=FAST,
         instructions=(
             "You are the Weather & Event Sentinel — the background monitor. " + _STATE_RULES +
             " Call check_weather against OUTDOOR calendar_blocks. If a block is threatened by rain, "
@@ -65,7 +69,7 @@ AGENTS: dict[str, Agent] = {
         can_transfer_to=["reshuffler", "supervisor"]),
 
     "reshuffler": Agent(
-        name="reshuffler", model="gpt-4o",
+        name="reshuffler", model=SMART,
         instructions=(
             "You are the Adaptive Reshuffler — the live fixer. " + _STATE_RULES +
             " Call reshuffle_block to swap a weather-compromised OUTDOOR activity for a nearby "
