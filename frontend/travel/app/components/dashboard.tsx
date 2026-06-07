@@ -357,18 +357,21 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
               </div>
             </div>
           ) : null}
+
+          {/* Flight picker — also pops up inside the agent dialog. The user can
+              compare options and book, or skip for now. */}
+          {flightPickerOpen && itinerary_manifest.flight_options.length > 0 ? (
+            <FlightPickerModal
+              inline
+              title={`Flights ${itinerary_manifest.origin} → ${itinerary_manifest.destination}`}
+              options={itinerary_manifest.flight_options}
+              selectedId={itinerary_manifest.selected_flight_id}
+              onSelect={handleFlightSelect}
+              onClose={() => setFlightPickerOpen(false)}
+            />
+          ) : null}
         </div>
       </div>
-
-      {flightPickerOpen && itinerary_manifest.flight_options.length > 0 ? (
-        <FlightPickerModal
-          title={`Flights ${itinerary_manifest.origin} → ${itinerary_manifest.destination}`}
-          options={itinerary_manifest.flight_options}
-          selectedId={itinerary_manifest.selected_flight_id}
-          onSelect={handleFlightSelect}
-          onClose={() => setFlightPickerOpen(false)}
-        />
-      ) : null}
 
       {sessionId ? (
         <ShareDialog ref={shareDialogRef} sessionId={sessionId} />

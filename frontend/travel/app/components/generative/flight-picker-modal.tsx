@@ -11,6 +11,8 @@ export interface FlightPickerModalProps {
   selectedId?: string;
   onSelect: (option: FlightOption) => void;
   onClose: () => void;
+  /** Dock inside a positioned container (the chat dialog) vs. full-screen. */
+  inline?: boolean;
 }
 
 const formatPrice = (usd: number): string =>
@@ -34,6 +36,7 @@ export const FlightPickerModal = ({
   selectedId,
   onSelect,
   onClose,
+  inline = false,
 }: FlightPickerModalProps) => {
   const [chosen, setChosen] = useState<string | null>(selectedId ?? null);
 
@@ -47,7 +50,12 @@ export const FlightPickerModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className={cn(
+        "z-40 flex items-center justify-center p-3",
+        inline ? "absolute inset-0" : "fixed inset-0 p-4",
+      )}
+    >
       <div
         className="absolute inset-0 bg-black/30"
         onClick={onClose}
@@ -58,7 +66,10 @@ export const FlightPickerModal = ({
         role="dialog"
         aria-modal="true"
         aria-label="Choose a flight"
-        className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-2xl"
+        className={cn(
+          "relative z-10 flex w-full flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-2xl",
+          inline ? "max-h-full" : "max-h-[85vh] max-w-2xl",
+        )}
       >
         <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -159,7 +170,7 @@ export const FlightPickerModal = ({
               onClick={onClose}
               className="rounded-sm border border-border px-3 py-1.5 text-xs font-semibold transition hover:bg-muted-surface"
             >
-              Cancel
+              Skip for now
             </button>
             <button
               type="button"
