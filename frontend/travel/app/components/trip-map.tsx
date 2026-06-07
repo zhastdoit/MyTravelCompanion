@@ -14,6 +14,10 @@ import { cn } from "@/lib/utils";
 interface TripMapProps {
   blocks: CalendarBlock[];
   className?: string;
+  /** Block id currently highlighted (synced with the itinerary list). */
+  highlightedId?: string | null;
+  /** Fired when a marker is clicked, to highlight its itinerary stop. */
+  onSelectBlock?: (id: string) => void;
 }
 
 const MARKER_COLORS: Record<CalendarBlock["type"], string> = {
@@ -24,27 +28,42 @@ const MARKER_COLORS: Record<CalendarBlock["type"], string> = {
 
 const FALLBACK_VIEW = { longitude: 2.3522, latitude: 48.8566, zoom: 11 };
 
-export const TripMap = ({ blocks, className }: TripMapProps) => {
+export const TripMap = ({
+  blocks,
+  className,
+  highlightedId,
+  onSelectBlock,
+}: TripMapProps) => {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef | null>(null);
 
+  // Number markers by chronological order — the same ordering the itinerary
+  // uses — so marker "3" and itinerary stop "3" are the same place.
+  const ordered = useMemo(
+    () =>
+      [...blocks].sort((a, b) =>
+        a.timestamp_start.localeCompare(b.timestamp_start),
+      ),
+    [blocks],
+  );
+
   const initialViewState = useMemo(() => {
-    if (blocks.length === 0) return FALLBACK_VIEW;
-    const [lng, lat] = blocks[0].coordinates;
+    if (ordered.length === 0) return FALLBACK_VIEW;
+    const [lng, lat] = ordered[0].coordinates;
     return { longitude: lng, latitude: lat, zoom: 12 };
-  }, [blocks]);
+  }, [ordered]);
 
   useEffect(() => {
-    if (!mapRef.current || blocks.length === 0) return;
+    if (!mapRef.current || ordered.length === 0) return;
 
-    if (blocks.length === 1) {
-      const [lng, lat] = blocks[0].coordinates;
+    if (ordered.length === 1) {
+      const [lng, lat] = ordered[0].coordinates;
       mapRef.current.easeTo({ center: [lng, lat], zoom: 13, duration: 600 });
       return;
     }
 
-    const lngs = blocks.map((b) => b.coordinates[0]);
-    const lats = blocks.map((b) => b.coordinates[1]);
+    const lngs = ordered.map((b) => b.coordinates[0]);
+    const lats = ordered.map((b) => b.coordinates[1]);
     mapRef.current.fitBounds(
       [
         [Math.min(...lngs), Math.min(...lats)],
@@ -52,7 +71,16 @@ export const TripMap = ({ blocks, className }: TripMapProps) => {
       ],
       { padding: 64, duration: 600, maxZoom: 14 },
     );
-  }, [blocks]);
+  }, [ordered]);
+
+  // Recenter on the highlighted stop when it changes (e.g. clicked in the list).
+  useEffect(() => {
+    if (!mapRef.current || !highlightedId) return;
+    const block = ordered.find((b) => b.id === highlightedId);
+    if (!block) return;
+    const [lng, lat] = block.coordinates;
+    mapRef.current.easeTo({ center: [lng, lat], duration: 500 });
+  }, [highlightedId, ordered]);
 
   if (!token) {
     return (
@@ -90,22 +118,36 @@ export const TripMap = ({ blocks, className }: TripMapProps) => {
         reuseMaps
       >
         <NavigationControl position="top-right" showCompass={false} />
-        {blocks.map((block, index) => (
-          <Marker
-            key={block.id}
-            longitude={block.coordinates[0]}
-            latitude={block.coordinates[1]}
-            anchor="bottom"
-          >
-            <div
-              className="flex size-7 -translate-y-1 items-center justify-center rounded-full text-xs font-semibold text-white shadow-md ring-2 ring-white"
-              style={{ backgroundColor: MARKER_COLORS[block.type] }}
-              title={block.activity_name}
+        {ordered.map((block, index) => {
+          const highlighted = highlightedId === block.id;
+          return (
+            <Marker
+              key={block.id}
+              longitude={block.coordinates[0]}
+              latitude={block.coordinates[1]}
+              anchor="bottom"
+              style={{ zIndex: highlighted ? 10 : 1 }}
             >
-              {index + 1}
-            </div>
-          </Marker>
-        ))}
+              <button
+                type="button"
+                title={block.activity_name}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectBlock?.(block.id);
+                }}
+                className={cn(
+                  "flex -translate-y-1 cursor-pointer items-center justify-center rounded-full font-semibold text-white shadow-md transition-all",
+                  highlighted
+                    ? "size-9 text-sm ring-4 ring-primary"
+                    : "size-7 text-xs ring-2 ring-white hover:scale-110",
+                )}
+                style={{ backgroundColor: MARKER_COLORS[block.type] }}
+              >
+                {index + 1}
+              </button>
+            </Marker>
+          );
+        })}
       </Map>
     </div>
   );

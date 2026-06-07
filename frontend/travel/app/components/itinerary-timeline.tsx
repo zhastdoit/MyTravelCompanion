@@ -1,9 +1,17 @@
+"use client";
+
+import { useEffect, useMemo, useRef } from "react";
 import { format, parseISO } from "date-fns";
 import { Building2, Bus, Trees } from "lucide-react";
 import { ACTIVITY_TYPES, type ActivityType, type CalendarBlock } from "@/types/trip";
+import { cn } from "@/lib/utils";
 
 interface ItineraryTimelineProps {
   blocks: CalendarBlock[];
+  /** Block id currently highlighted (synced with the map markers). */
+  highlightedId?: string | null;
+  /** Fired when a stop is clicked, to highlight its map marker. */
+  onSelectBlock?: (id: string) => void;
 }
 
 const TYPE_META: Record<
@@ -30,12 +38,27 @@ const TYPE_META: Record<
   },
 };
 
+/**
+ * The backend stamps each stop's *local* wall-clock time as UTC ("...Z").
+ * Render it verbatim — no timezone conversion — so a 9:00 plan stays "9:00 AM"
+ * instead of being shifted into the viewer's timezone (e.g. "2:00 AM").
+ */
+const formatLocalTime = (iso: string): string => {
+  const match = iso.match(/T(\d{2}):(\d{2})/);
+  if (!match) return "";
+  let hour = Number(match[1]);
+  const minute = match[2];
+  const meridiem = hour >= 12 ? "PM" : "AM";
+  hour = hour % 12 || 12;
+  return `${hour}:${minute} ${meridiem}`;
+};
+
+const sortByTime = (blocks: CalendarBlock[]): CalendarBlock[] =>
+  [...blocks].sort((a, b) => a.timestamp_start.localeCompare(b.timestamp_start));
+
 const groupByDate = (blocks: CalendarBlock[]): Map<string, CalendarBlock[]> => {
   const groups = new Map<string, CalendarBlock[]>();
-  const sorted = [...blocks].sort((a, b) =>
-    a.timestamp_start.localeCompare(b.timestamp_start),
-  );
-  for (const block of sorted) {
+  for (const block of sortByTime(blocks)) {
     const key = block.timestamp_start.slice(0, 10);
     const list = groups.get(key);
     if (list) list.push(block);
@@ -44,7 +67,19 @@ const groupByDate = (blocks: CalendarBlock[]): Map<string, CalendarBlock[]> => {
   return groups;
 };
 
-export const ItineraryTimeline = ({ blocks }: ItineraryTimelineProps) => {
+export const ItineraryTimeline = ({
+  blocks,
+  highlightedId,
+  onSelectBlock,
+}: ItineraryTimelineProps) => {
+  // One global ordering shared with the map so each stop's number matches its
+  // map marker.
+  const numberById = useMemo(() => {
+    const map = new Map<string, number>();
+    sortByTime(blocks).forEach((block, idx) => map.set(block.id, idx + 1));
+    return map;
+  }, [blocks]);
+
   if (blocks.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border bg-surface p-6 text-center text-sm text-muted">
@@ -61,11 +96,13 @@ export const ItineraryTimeline = ({ blocks }: ItineraryTimelineProps) => {
         <li key={date}>
           <DayHeader date={date} count={dayBlocks.length} />
           <ul className="mt-2 space-y-1.5">
-            {dayBlocks.map((block, idx) => (
+            {dayBlocks.map((block) => (
               <BlockCard
                 key={block.id}
                 block={block}
-                index={idx + 1}
+                index={numberById.get(block.id) ?? 0}
+                highlighted={highlightedId === block.id}
+                onSelect={onSelectBlock}
               />
             ))}
           </ul>
@@ -89,20 +126,58 @@ const DayHeader = ({ date, count }: { date: string; count: number }) => {
   );
 };
 
-const BlockCard = ({ block, index }: { block: CalendarBlock; index: number }) => {
+const BlockCard = ({
+  block,
+  index,
+  highlighted,
+  onSelect,
+}: {
+  block: CalendarBlock;
+  index: number;
+  highlighted: boolean;
+  onSelect?: (id: string) => void;
+}) => {
   const meta = TYPE_META[block.type];
   const Icon = meta.icon;
-  const start = parseISO(block.timestamp_start);
+  const ref = useRef<HTMLLIElement | null>(null);
+
+  // When the highlight arrives from a map-marker click, scroll the stop into
+  // view so the user sees what they tapped.
+  useEffect(() => {
+    if (highlighted) {
+      ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [highlighted]);
 
   return (
-    <li className="group relative rounded-md border border-border bg-surface p-2.5 transition hover:border-primary/60 hover:bg-primary/[0.02]">
+    <li
+      ref={ref}
+      onClick={() => onSelect?.(block.id)}
+      className={cn(
+        "group relative cursor-pointer rounded-md border bg-surface p-2.5 transition",
+        highlighted
+          ? "border-primary bg-primary/[0.04] ring-1 ring-primary"
+          : "border-border hover:border-primary/60 hover:bg-primary/[0.02]",
+      )}
+    >
       <span
-        className={`absolute inset-y-0 left-0 w-0.5 rounded-l-[var(--radius)] ${meta.dot} opacity-0 transition group-hover:opacity-100`}
+        className={cn(
+          "absolute inset-y-0 left-0 w-0.5 rounded-l-[var(--radius)] transition",
+          meta.dot,
+          highlighted ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        )}
         aria-hidden
       />
       <div className="flex items-start gap-2.5">
         <div className="flex flex-col items-center pt-0.5">
-          <span className="grid size-6 place-items-center rounded-sm bg-muted-surface font-mono text-[11px] font-semibold tabular-nums">
+          <span
+            className={cn(
+              "grid size-6 place-items-center rounded-sm font-mono text-[11px] font-semibold tabular-nums transition",
+              highlighted
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted-surface",
+            )}
+          >
             {index}
           </span>
           <span className={`mt-1 size-1.5 rounded-full ${meta.dot}`} />
@@ -113,7 +188,7 @@ const BlockCard = ({ block, index }: { block: CalendarBlock; index: number }) =>
               {block.activity_name}
             </p>
             <span className="shrink-0 font-mono text-xs text-muted tabular-nums">
-              {format(start, "HH:mm")}
+              {formatLocalTime(block.timestamp_start)}
             </span>
           </div>
           <div className="mt-1 flex items-center gap-2">

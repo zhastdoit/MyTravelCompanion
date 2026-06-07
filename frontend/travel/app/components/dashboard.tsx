@@ -12,7 +12,7 @@ import {
 import { AgentAssistantMessage } from "./chat/agent-assistant-message";
 import {
   ACTIVE_FORM_COMPONENT,
-  type ItineraryManifest,
+  type FlightOption,
   type TripState,
 } from "@/types/trip";
 import { AGENT_STATUSES } from "@/types/agent";
@@ -22,7 +22,6 @@ import {
   type AgentId,
   type AgentStatusMap,
 } from "@/lib/agents";
-import { MOCK_TRIP } from "@/lib/mock-trip";
 import { usePersistedTrip } from "@/lib/use-persisted-trip";
 import { toFrontendTripState } from "@/lib/trip-bridge";
 import { useTripBackendState } from "@/lib/use-trip-backend-state";
@@ -37,7 +36,7 @@ import { ShareDialog, type ShareDialogHandle } from "./share-dialog";
 import { NotificationToaster } from "./notification-toaster";
 import { OnboardingCard } from "./onboarding-card";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
-import { FlightCheckoutCard } from "./generative/flight-checkout-card";
+import { FlightPickerModal } from "./generative/flight-picker-modal";
 import {
   GroupAgreementForm,
   type GroupAgreementResult,
@@ -86,6 +85,12 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
   // The left trip panel is collapsible — it pops up once a road is planned,
   // and the user can hide it to give the conversation the full width.
   const [panelHidden, setPanelHidden] = useState(false);
+
+  // Shared highlight between the map markers and the itinerary list: clicking
+  // either side lights up the matching stop on the other.
+  const [highlightedBlockId, setHighlightedBlockId] = useState<string | null>(
+    null,
+  );
 
   const handleBackendState = useCallback(
     (next: Parameters<typeof toFrontendTripState>[0]) => {
@@ -145,16 +150,25 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
     [sendUserMessage, dismissActiveForm],
   );
 
+  const handleFlightSelect = useCallback(
+    (option: FlightOption) => {
+      handleFlightCheckout({
+        airline: option.airline,
+        flightNumber:
+          option.stops === 0 ? "Nonstop" : `${option.stops} stops`,
+        origin: option.depart,
+        destination: option.arrive,
+        priceUsd: option.price_usd,
+      });
+    },
+    [handleFlightCheckout],
+  );
+
   const { itinerary_manifest, group_profile, group_members } = tripState;
   const shareDialogRef = useRef<ShareDialogHandle | null>(null);
   const openShare = useCallback(() => {
     shareDialogRef.current?.open();
   }, []);
-
-  const flightStub = useMemo(
-    () => deriveFlightStub(itinerary_manifest),
-    [itinerary_manifest],
-  );
 
   const isEmpty = itinerary_manifest.origin === "";
 
@@ -231,23 +245,11 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                 />
               ) : null}
 
-              {activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER ? (
-                <FlightCheckoutCard
-                  airline={flightStub.airline}
-                  flightNumber={flightStub.flightNumber}
-                  origin={flightStub.origin}
-                  destination={flightStub.destination}
-                  departure={flightStub.departure}
-                  arrival={flightStub.arrival}
-                  durationMinutes={flightStub.durationMinutes}
-                  priceUsd={flightStub.priceUsd}
-                  bookUrl={flightStub.bookUrl}
-                  status="complete"
-                  onConfirm={handleFlightCheckout}
-                />
-              ) : null}
-
-              <ItineraryTimeline blocks={itinerary_manifest.calendar_blocks} />
+              <ItineraryTimeline
+                blocks={itinerary_manifest.calendar_blocks}
+                highlightedId={highlightedBlockId}
+                onSelectBlock={setHighlightedBlockId}
+              />
             </div>
           </aside>
         ) : null}
@@ -284,6 +286,8 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                 <TripMap
                   blocks={itinerary_manifest.calendar_blocks}
                   className="h-full w-full"
+                  highlightedId={highlightedBlockId}
+                  onSelectBlock={setHighlightedBlockId}
                 />
               </div>
             </>
@@ -304,6 +308,17 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
           />
         </div>
       </div>
+
+      {activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER &&
+      itinerary_manifest.flight_options.length > 0 ? (
+        <FlightPickerModal
+          title={`Flights ${itinerary_manifest.origin} → ${itinerary_manifest.destination}`}
+          options={itinerary_manifest.flight_options}
+          selectedId={itinerary_manifest.selected_flight_id}
+          onSelect={handleFlightSelect}
+          onClose={dismissActiveForm}
+        />
+      ) : null}
 
       {sessionId ? (
         <ShareDialog ref={shareDialogRef} sessionId={sessionId} />
@@ -352,71 +367,4 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
       />
     </div>
   );
-};
-
-interface FlightStub {
-  airline: string;
-  flightNumber: string;
-  origin: string;
-  destination: string;
-  departure: string;
-  arrival: string;
-  durationMinutes: number;
-  priceUsd: number;
-  bookUrl: string;
-}
-
-const FALLBACK_FLIGHT: FlightStub = {
-  airline: "Searching flights…",
-  flightNumber: "—",
-  origin: MOCK_TRIP.itinerary_manifest.origin,
-  destination: MOCK_TRIP.itinerary_manifest.destination,
-  departure: "",
-  arrival: "",
-  durationMinutes: 0,
-  priceUsd: 0,
-  bookUrl: "",
-};
-
-/** Parse a human duration like "27h 25m" into total minutes. */
-const parseDurationToMinutes = (raw: string): number => {
-  if (!raw) return 0;
-  const h = raw.match(/(\d+)\s*h/i);
-  const m = raw.match(/(\d+)\s*m/i);
-  return (h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0);
-};
-
-/**
- * Map the real backend flight options into the card's shape. Prefers the
- * user-selected option, else the cheapest. Falls back to a neutral placeholder
- * only when no options exist yet (e.g. before the Logistician has searched).
- */
-const deriveFlightStub = (manifest: ItineraryManifest): FlightStub => {
-  const opts = manifest.flight_options ?? [];
-  if (opts.length === 0) {
-    return {
-      ...FALLBACK_FLIGHT,
-      origin: manifest.origin || FALLBACK_FLIGHT.origin,
-      destination: manifest.destination || FALLBACK_FLIGHT.destination,
-    };
-  }
-
-  const chosen =
-    opts.find((o) => o.id === manifest.selected_flight_id) ??
-    opts.reduce((a, b) => (b.price_usd < a.price_usd ? b : a));
-
-  return {
-    airline: chosen.airline || "Flight",
-    flightNumber:
-      chosen.stops === 0
-        ? "Nonstop"
-        : `${chosen.stops} stop${chosen.stops > 1 ? "s" : ""}`,
-    origin: chosen.depart || manifest.origin,
-    destination: chosen.arrive || manifest.destination,
-    departure: "",
-    arrival: "",
-    durationMinutes: parseDurationToMinutes(chosen.duration),
-    priceUsd: chosen.price_usd,
-    bookUrl: chosen.book_url,
-  };
 };
