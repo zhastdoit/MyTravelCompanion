@@ -162,6 +162,10 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
   useCopilotAction({
     name: "group_agreement",
     description: "Confirm or adjust the group's compiled trip constraints.",
+    // Render-only: this card visualizes the agent's tool call in the chat; it's
+    // not a tool the LLM calls itself. (Without an `available`/`handler`,
+    // CopilotKit throws "Invalid action configuration".)
+    available: "frontend",
     parameters: [
       { name: "budget_ceiling_usd", type: "number" },
       { name: "pacing", type: "string" },
