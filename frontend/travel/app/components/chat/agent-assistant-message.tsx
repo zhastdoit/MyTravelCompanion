@@ -5,21 +5,51 @@ import {
   AssistantMessage as DefaultAssistantMessage,
   type AssistantMessageProps,
 } from "@copilotkit/react-ui";
-import { AGENTS, type AgentId } from "@/lib/agents";
+import { AGENTS, AGENT_IDS, type AgentId } from "@/lib/agents";
 import { useAgentSpeaker } from "./agent-speaker-context";
 import { AgentAvatar } from "../agent-avatar";
+
+// Backend chat[] lines render as `**<emoji> <name>** — <text>`. Map that prefix
+// back to an AgentId so each bubble shows the right avatar, regardless of the
+// active form. Name match first (unique), emoji as a fallback.
+const NAME_TO_ID: Record<string, AgentId> = Object.fromEntries(
+  Object.values(AGENTS).map((a) => [a.label.toLowerCase(), a.id]),
+);
+const EMOJI_TO_ID: Record<string, AgentId> = {
+  "🧭": AGENT_IDS.SUPERVISOR,
+  "🤝": AGENT_IDS.DIPLOMAT,
+  "🧰": AGENT_IDS.LOGISTICIAN,
+  "🌦️": AGENT_IDS.SENTINEL,
+  "🔀": AGENT_IDS.RESHUFFLER,
+};
+
+const resolveAgentFromContent = (content: string): AgentId | null => {
+  const bold = content.match(/\*\*([^*]+)\*\*/);
+  if (!bold) return null;
+  const inner = bold[1];
+  const name = inner.replace(/[^\p{L} ]/gu, "").trim().toLowerCase();
+  if (NAME_TO_ID[name]) return NAME_TO_ID[name];
+  for (const [emoji, id] of Object.entries(EMOJI_TO_ID)) {
+    if (inner.includes(emoji)) return id;
+  }
+  return null;
+};
 
 export const AgentAssistantMessage = (props: AssistantMessageProps) => {
   const { bindMessage } = useAgentSpeaker();
   const fallbackMessageId = useId();
   const messageId = props.message?.id ?? fallbackMessageId;
 
+  const content =
+    typeof props.message?.content === "string" ? props.message.content : "";
+
   /**
-   * Lazily bind this message to whichever agent was active at first render,
-   * then keep that attribution stable for the rest of the session.
+   * Resolve the speaker from the message content first (each line is prefixed
+   * with its agent), falling back to whichever agent was active at first
+   * render. Bound once and kept stable for the rest of the session.
    */
   const [boundAgent] = useState<AgentId | null>(() =>
-    bindMessage(messageId),
+    bindMessage(messageId, resolveAgentFromContent(content)),
   );
 
   if (!boundAgent) return <DefaultAssistantMessage {...props} />;
