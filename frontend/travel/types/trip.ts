@@ -44,10 +44,28 @@ export interface CalendarBlock {
   coordinates: LngLat;
 }
 
+/** A single flight option from the backend (SerpApi/Google Flights or mock). */
+export interface FlightOption {
+  id: string;
+  airline: string;
+  price_usd: number;
+  stops: number;
+  /** Human-readable, e.g. "27h 25m". */
+  duration: string;
+  /** Origin code/city. */
+  depart: string;
+  /** Destination code/city. */
+  arrive: string;
+  /** Deep link the UI renders as a "Book" button. */
+  book_url: string;
+}
+
 export interface ItineraryManifest {
   origin: string;
   destination: string;
   calendar_blocks: CalendarBlock[];
+  flight_options: FlightOption[];
+  selected_flight_id: string;
 }
 
 export interface CopilotUiHooks {

@@ -6,6 +6,7 @@ import {
   type ActivityType,
   type CalendarBlock,
   type CopilotUiHooks,
+  type FlightOption,
   type GroupProfile,
   type ItineraryManifest,
   type Pacing,
@@ -29,10 +30,23 @@ export interface BackendCalendarBlock {
   coordinates: [number, number] | number[];
 }
 
+export interface BackendFlightOption {
+  id: string;
+  airline: string;
+  price_usd: number;
+  stops: number;
+  duration: string;
+  depart: string;
+  arrive: string;
+  book_url: string;
+}
+
 export interface BackendItineraryManifest {
   origin: string;
   destination: string;
   calendar_blocks: BackendCalendarBlock[];
+  flight_options?: BackendFlightOption[];
+  selected_flight_id?: string;
 }
 
 export interface BackendCompiledConstraints {
@@ -140,12 +154,25 @@ const toCalendarBlock = (block: BackendCalendarBlock): CalendarBlock => ({
   coordinates: flipLatLonToLngLat(block.coordinates),
 });
 
+const toFlightOption = (f: BackendFlightOption): FlightOption => ({
+  id: f.id,
+  airline: f.airline ?? "",
+  price_usd: Number(f.price_usd) || 0,
+  stops: Number(f.stops) || 0,
+  duration: f.duration ?? "",
+  depart: f.depart ?? "",
+  arrive: f.arrive ?? "",
+  book_url: f.book_url ?? "",
+});
+
 const toItineraryManifest = (
   manifest: BackendItineraryManifest,
 ): ItineraryManifest => ({
   origin: manifest.origin,
   destination: manifest.destination,
   calendar_blocks: manifest.calendar_blocks.map(toCalendarBlock),
+  flight_options: (manifest.flight_options ?? []).map(toFlightOption),
+  selected_flight_id: manifest.selected_flight_id ?? "",
 });
 
 const toGroupProfile = (profile: BackendGroupProfile): GroupProfile => {

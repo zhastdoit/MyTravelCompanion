@@ -10,7 +10,11 @@ import {
   useAgentSpeaker,
 } from "./chat/agent-speaker-context";
 import { AgentAssistantMessage } from "./chat/agent-assistant-message";
-import { ACTIVE_FORM_COMPONENT, type TripState } from "@/types/trip";
+import {
+  ACTIVE_FORM_COMPONENT,
+  type ItineraryManifest,
+  type TripState,
+} from "@/types/trip";
 import { AGENT_STATUSES } from "@/types/agent";
 import {
   AGENT_IDS,
@@ -148,8 +152,8 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
   }, []);
 
   const flightStub = useMemo(
-    () => deriveFlightStub(itinerary_manifest.origin, itinerary_manifest.destination),
-    [itinerary_manifest.origin, itinerary_manifest.destination],
+    () => deriveFlightStub(itinerary_manifest),
+    [itinerary_manifest],
   );
 
   const isEmpty = itinerary_manifest.origin === "";
@@ -237,6 +241,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                   arrival={flightStub.arrival}
                   durationMinutes={flightStub.durationMinutes}
                   priceUsd={flightStub.priceUsd}
+                  bookUrl={flightStub.bookUrl}
                   status="complete"
                   onConfirm={handleFlightCheckout}
                 />
@@ -358,10 +363,11 @@ interface FlightStub {
   arrival: string;
   durationMinutes: number;
   priceUsd: number;
+  bookUrl: string;
 }
 
 const FALLBACK_FLIGHT: FlightStub = {
-  airline: "TBD Airlines",
+  airline: "Searching flights…",
   flightNumber: "—",
   origin: MOCK_TRIP.itinerary_manifest.origin,
   destination: MOCK_TRIP.itinerary_manifest.destination,
@@ -369,14 +375,48 @@ const FALLBACK_FLIGHT: FlightStub = {
   arrival: "",
   durationMinutes: 0,
   priceUsd: 0,
+  bookUrl: "",
+};
+
+/** Parse a human duration like "27h 25m" into total minutes. */
+const parseDurationToMinutes = (raw: string): number => {
+  if (!raw) return 0;
+  const h = raw.match(/(\d+)\s*h/i);
+  const m = raw.match(/(\d+)\s*m/i);
+  return (h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0);
 };
 
 /**
- * Baseline placeholder values for the flight card. Real flight data lives in
- * the backend's `tools.search_flights` output and isn't yet plumbed into
- * `TripState`; once it is, this helper goes away.
+ * Map the real backend flight options into the card's shape. Prefers the
+ * user-selected option, else the cheapest. Falls back to a neutral placeholder
+ * only when no options exist yet (e.g. before the Logistician has searched).
  */
-const deriveFlightStub = (origin: string, destination: string): FlightStub =>
-  origin && destination
-    ? { ...FALLBACK_FLIGHT, origin, destination }
-    : FALLBACK_FLIGHT;
+const deriveFlightStub = (manifest: ItineraryManifest): FlightStub => {
+  const opts = manifest.flight_options ?? [];
+  if (opts.length === 0) {
+    return {
+      ...FALLBACK_FLIGHT,
+      origin: manifest.origin || FALLBACK_FLIGHT.origin,
+      destination: manifest.destination || FALLBACK_FLIGHT.destination,
+    };
+  }
+
+  const chosen =
+    opts.find((o) => o.id === manifest.selected_flight_id) ??
+    opts.reduce((a, b) => (b.price_usd < a.price_usd ? b : a));
+
+  return {
+    airline: chosen.airline || "Flight",
+    flightNumber:
+      chosen.stops === 0
+        ? "Nonstop"
+        : `${chosen.stops} stop${chosen.stops > 1 ? "s" : ""}`,
+    origin: chosen.depart || manifest.origin,
+    destination: chosen.arrive || manifest.destination,
+    departure: "",
+    arrival: "",
+    durationMinutes: parseDurationToMinutes(chosen.duration),
+    priceUsd: chosen.price_usd,
+    bookUrl: chosen.book_url,
+  };
+};

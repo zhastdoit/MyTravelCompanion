@@ -75,6 +75,8 @@ export const MOCK_TRIP: TripState = {
         coordinates: [2.343, 48.8867],
       },
     ],
+    flight_options: [],
+    selected_flight_id: "",
   },
   copilot_ui_hooks: {
     active_form_component: ACTIVE_FORM_COMPONENT.NONE,

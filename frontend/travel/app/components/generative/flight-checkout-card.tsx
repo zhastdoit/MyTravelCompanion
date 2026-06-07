@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plane } from "lucide-react";
+import { ExternalLink, Plane } from "lucide-react";
 import { AGENT_IDS } from "@/lib/agents";
 import { AgentCard } from "./agent-card";
 
@@ -22,6 +22,8 @@ export interface FlightCheckoutCardProps {
   arrival?: string;
   durationMinutes?: number;
   priceUsd: number;
+  /** Real deep link (Google Flights) when available. */
+  bookUrl?: string;
   status: "inProgress" | "executing" | "complete";
   /** Called once when the user confirms the booking, before local state flips. */
   onConfirm?: (result: FlightCheckoutResult) => void;
@@ -61,6 +63,7 @@ export const FlightCheckoutCard = ({
   arrival,
   durationMinutes,
   priceUsd,
+  bookUrl,
   status,
   onConfirm,
 }: FlightCheckoutCardProps) => {
@@ -83,11 +86,22 @@ export const FlightCheckoutCard = ({
           <span className="font-mono text-[11px] text-muted">
             {flightNumber}
           </span>
+          {bookUrl ? (
+            <a
+              href={bookUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-sm border border-border px-2.5 py-1 text-xs font-semibold transition hover:border-primary/60 hover:text-primary"
+            >
+              <ExternalLink className="size-3" aria-hidden />
+              View on Google Flights
+            </a>
+          ) : null}
           <button
             type="button"
             onClick={handleConfirm}
             disabled={booked || !isComplete}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-sm bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+            className={`${bookUrl ? "" : "ml-auto "}inline-flex items-center gap-1.5 rounded-sm bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60`}
           >
             <Plane className="size-3" aria-hidden />
             {booked ? "Booked" : "Confirm booking"}
@@ -105,12 +119,14 @@ export const FlightCheckoutCard = ({
       </div>
       <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-wider text-muted">
+          <p className="font-mono text-sm font-semibold uppercase tracking-wider tabular-nums">
             {origin}
           </p>
-          <p className="font-mono text-sm font-semibold tabular-nums">
-            {formatTime(departure)}
-          </p>
+          {departure ? (
+            <p className="font-mono text-[11px] text-muted tabular-nums">
+              {formatTime(departure)}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-col items-center gap-1">
           <span className="text-[10px] uppercase tracking-wider text-muted">
@@ -119,12 +135,14 @@ export const FlightCheckoutCard = ({
           <span className="h-px w-12 bg-border" aria-hidden />
         </div>
         <div className="text-right">
-          <p className="font-mono text-[11px] uppercase tracking-wider text-muted">
+          <p className="font-mono text-sm font-semibold uppercase tracking-wider tabular-nums">
             {destination}
           </p>
-          <p className="font-mono text-sm font-semibold tabular-nums">
-            {formatTime(arrival)}
-          </p>
+          {arrival ? (
+            <p className="font-mono text-[11px] text-muted tabular-nums">
+              {formatTime(arrival)}
+            </p>
+          ) : null}
         </div>
       </div>
     </AgentCard>
