@@ -1,6 +1,6 @@
+import Image from "next/image";
 import { MapPin, Sparkles, Wallet } from "lucide-react";
 import type { GroupProfile, ItineraryManifest } from "@/types/trip";
-import { BrandMark } from "./brand-mark";
 
 interface HeaderProps {
   itinerary: ItineraryManifest;
@@ -22,9 +22,14 @@ export const Header = ({ itinerary, groupProfile, rightSlot }: HeaderProps) => {
   return (
     <header className="sticky top-0 z-30 flex flex-wrap items-center gap-3 border-b border-border bg-surface/85 px-5 py-2.5 backdrop-blur">
       <div className="flex items-center gap-2 font-semibold tracking-tight">
-        <span className="grid size-7 place-items-center rounded-sm bg-primary text-primary-foreground">
-          <BrandMark className="size-4" />
-        </span>
+        <Image
+          src="/agent-avatars/logistician.png"
+          alt="My Travel Companion"
+          width={28}
+          height={28}
+          className="size-7 rounded-md object-cover"
+          priority
+        />
         <span className="text-[15px] leading-none">My Travel Companion</span>
       </div>
 
