@@ -9,7 +9,7 @@ import { AGENTS, type AgentId } from "@/lib/agents";
 import { useAgentSpeaker } from "./agent-speaker-context";
 
 export const AgentAssistantMessage = (props: AssistantMessageProps) => {
-  const { currentAgent, bindMessage } = useAgentSpeaker();
+  const { bindMessage } = useAgentSpeaker();
   const messageId = props.message?.id;
 
   /**
@@ -17,7 +17,7 @@ export const AgentAssistantMessage = (props: AssistantMessageProps) => {
    * then keep that attribution stable for the rest of the session.
    */
   const [boundAgent] = useState<AgentId | null>(() =>
-    messageId ? bindMessage(messageId, currentAgent) : currentAgent,
+    messageId ? bindMessage(messageId) : null,
   );
 
   if (!boundAgent) return <DefaultAssistantMessage {...props} />;

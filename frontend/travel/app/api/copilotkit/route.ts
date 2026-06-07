@@ -1,46 +1,37 @@
 import {
   CopilotRuntime,
-  ExperimentalEmptyAdapter,
-  OpenAIAdapter,
-  type CopilotServiceAdapter,
   copilotRuntimeNextJSAppRouterEndpoint,
 } from "@copilotkit/runtime";
-import OpenAI from "openai";
 import type { NextRequest } from "next/server";
+import { FastApiAgent } from "./fastapi-agent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-let cached: { runtime: CopilotRuntime; adapter: CopilotServiceAdapter } | null = null;
+const DEFAULT_BACKEND_URL = "http://localhost:8000";
 
-const getRuntime = (): { runtime: CopilotRuntime; adapter: CopilotServiceAdapter } => {
-  if (cached) return cached;
+let cached: { runtime: CopilotRuntime; backendUrl: string } | null = null;
 
-  const backendUrl = process.env.COPILOT_BACKEND_URL;
-  const openaiKey = process.env.OPENAI_API_KEY;
+const getRuntime = () => {
+  const backendUrl = process.env.BACKEND_URL ?? DEFAULT_BACKEND_URL;
+  if (cached && cached.backendUrl === backendUrl) return cached;
 
-  const copilotRuntime = new CopilotRuntime({
-    remoteEndpoints: backendUrl ? [{ url: backendUrl }] : [],
-  });
-
-  const adapter: CopilotServiceAdapter = openaiKey
-    ? new OpenAIAdapter({
-        openai: new OpenAI({ apiKey: openaiKey }),
-        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-      })
-    : new ExperimentalEmptyAdapter();
-
-  cached = { runtime: copilotRuntime, adapter };
+  const fastApiAgent = new FastApiAgent({ backendUrl });
+  cached = {
+    runtime: new CopilotRuntime({ agents: { default: fastApiAgent } }),
+    backendUrl,
+  };
   return cached;
 };
 
 export const POST = async (req: NextRequest): Promise<Response> => {
-  const { runtime, adapter } = getRuntime();
+  const { runtime: copilotRuntime } = getRuntime();
   const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
-    runtime,
-    serviceAdapter: adapter,
+    runtime: copilotRuntime,
     endpoint: "/api/copilotkit",
   });
 
   return handleRequest(req);
 };
+
+export const GET = POST;

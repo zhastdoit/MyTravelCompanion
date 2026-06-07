@@ -6,20 +6,23 @@ import {
   useContext,
   useMemo,
   useRef,
-  useState,
   type ReactNode,
 } from "react";
 import type { AgentId } from "@/lib/agents";
 
 interface AgentSpeakerContextValue {
-  currentAgent: AgentId | null;
+  /**
+   * Record the most recent worker agent. Stored in a ref to keep `bindMessage`
+   * cheap and avoid `setState`-in-effect cascades when callers update it from
+   * derived data (e.g. `active_form_component`).
+   */
   setCurrentAgent: (agent: AgentId | null) => void;
   /**
-   * Bind a message ID to whichever agent was speaking at first render.
-   * Called by `AgentAssistantMessage` via a `useState` lazy initializer so
-   * each bubble stays attributed to its agent for the rest of the session.
+   * Bind a message ID to whichever agent was speaking when this is first
+   * called. The binding is keyed by message ID so each bubble stays
+   * attributed across re-renders.
    */
-  bindMessage: (messageId: string, fallback: AgentId | null) => AgentId | null;
+  bindMessage: (messageId: string, fallback?: AgentId | null) => AgentId | null;
   /** Look up the agent bound to a message ID, or null if not bound. */
   getSpeaker: (messageId: string) => AgentId | null;
 }
@@ -27,16 +30,23 @@ interface AgentSpeakerContextValue {
 const AgentSpeakerContext = createContext<AgentSpeakerContextValue | null>(null);
 
 export const AgentSpeakerProvider = ({ children }: { children: ReactNode }) => {
-  const [currentAgent, setCurrentAgent] = useState<AgentId | null>(null);
+  const currentAgentRef = useRef<AgentId | null>(null);
   const bindings = useRef<Map<string, AgentId>>(new Map());
+
+  const setCurrentAgent = useCallback<
+    AgentSpeakerContextValue["setCurrentAgent"]
+  >((agent) => {
+    currentAgentRef.current = agent;
+  }, []);
 
   const bindMessage = useCallback<AgentSpeakerContextValue["bindMessage"]>(
     (messageId, fallback) => {
       const existing = bindings.current.get(messageId);
       if (existing) return existing;
-      if (fallback) {
-        bindings.current.set(messageId, fallback);
-        return fallback;
+      const next = fallback ?? currentAgentRef.current;
+      if (next) {
+        bindings.current.set(messageId, next);
+        return next;
       }
       return null;
     },
@@ -49,8 +59,8 @@ export const AgentSpeakerProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const value = useMemo<AgentSpeakerContextValue>(
-    () => ({ currentAgent, setCurrentAgent, bindMessage, getSpeaker }),
-    [currentAgent, bindMessage, getSpeaker],
+    () => ({ setCurrentAgent, bindMessage, getSpeaker }),
+    [setCurrentAgent, bindMessage, getSpeaker],
   );
 
   return (
