@@ -18,10 +18,10 @@ Snapshot of what's working and what's next. **Legend:** 🟢 done · 🟡 in pro
 | `$1`/session cost cap + token tracking | you | 🟢 | metered per session; per-turn token counts |
 | Loop guards + human fallback | you | 🟢 | caps + ping-pong detection → "&lt;name&gt;, what do you think?" |
 | Weave tracing | you | 🟡 | `@op` shim wired; eval metrics not built |
-| Mock travel tools | you | 🟡 | Amadeus/Geoapify/OpenWeather mocked behind real names |
+| Travel data tools | you | 🟡 | **Flights LIVE via SerpApi (Google Flights)**; weather/POIs still mock |
 | Redis HOT store | you | 🟡 | works; in-memory fallback until Redis is up |
-| Next.js + CopilotKit app | ryw | 🟡 | gateway wired; forms render from `form_payload` (in progress) |
-| Real external APIs | you | ⬜ | swap mock internals in `tools.py` |
+| Next.js + CopilotKit app | ryw | 🟡 | deps installed, dev server runs (`:3000` → `/trip/{id}`); forms in progress |
+| Real external APIs | you | 🟡 | **Flights done (SerpApi)**; OpenWeather + Geoapify next |
 | Supabase COLD (auth + save) | ryw | ⬜ | |
 
 ---
@@ -38,7 +38,7 @@ flowchart TB
     API["FastAPI<br/>/api/chat · /api/state · /api/select · /api/cost"]:::done
     ORCH["Handoff engine<br/>run_turn() · @-mention · loop guards · cost cap"]:::done
     AG["5 agents<br/>Supervisor · Diplomat · Logistician · Sentinel · Reshuffler"]:::done
-    TOOLS["Tools<br/>mocked Amadeus / Geoapify / Weather (+ booking links)"]:::wip
+    TOOLS["Tools<br/>SerpApi flights LIVE · Geoapify/Weather mock (+ booking links)"]:::wip
   end
   STATE["TripState<br/>constraints · itinerary · flight_options · form_payload"]:::done
   REDIS["Redis HOT<br/>(in-mem fallback now)"]:::wip
@@ -99,7 +99,7 @@ flowchart LR
   A["🟢 Multi-agent brain<br/>(real OpenAI)"]:::done
 
   A --> B["🟡 CopilotKit forms<br/>render form_payload + select"]:::next
-  A --> C["⬜ Real APIs<br/>OpenWeather → Amadeus/Geoapify"]:::todo
+  A --> C["🟡 Real APIs<br/>SerpApi flights ✅ · OpenWeather/Geoapify next"]:::next
   A --> D["🟡 Weave eval metrics<br/>JSON adherence · latency"]:::next
   A --> E["⬜ Redis + Supabase<br/>hot + cold persistence"]:::todo
 
