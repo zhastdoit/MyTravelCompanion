@@ -4,7 +4,7 @@ SyncTrip: Multi-Agent Travel Orchestration Engine
 
 Standard travel planners are static text wrappers. SyncTrip is a dynamic, consumer-centric travel dashboard that acts as a group mediator, logistics broker, and real-time trip fixer.
 
-Our goals for this build are:
+Our goals for this hackathon build are:
 
     Eliminate Friction: Use AI to negotiate conflicting group preferences mathematically.
 
