@@ -180,6 +180,7 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         trail.append({"agent": "user", "action": f"@{entry} (direct)"})
     reply, final_agent = "", active
     transfers_since_work = 0          # productive work resets this; pure handoffs grow it
+    tok_before = cost.tokens(session_id)
 
     for _ in range(MAX_STEPS):
         if not USE_MOCK_LLM and cost.over_cap(session_id):
@@ -248,6 +249,9 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         "entry_agent": entry,
         "usd_spent": cost.spent(session_id),
         "usd_cap": cost.CAP,
+        "tokens_turn": {k: cost.tokens(session_id)[k] - tok_before[k]
+                        for k in ("prompt", "completion", "calls", "total")},
+        "tokens_session": cost.tokens(session_id),
     }
 
 
