@@ -170,7 +170,9 @@ def query_amadeus(state: TripState, *, origin: str = "", destination: str = "") 
     exists for the entered city. Always surfaces the FLIGHT_PICKER form so
     the UI has something to render."""
     o = origin or state.itinerary_manifest.origin or "SFO"
-    d = destination or state.itinerary_manifest.destination or "Tokyo"
+    d = (destination or state.itinerary_manifest.destination or "").strip()
+    if not d:
+        return "[Flights] No destination set yet — where would you like to fly to?"
 
     # Already there — a local trip needs no flight. Clear any stale options and
     # don't surface the FLIGHT_PICKER form.
@@ -449,7 +451,10 @@ def query_geoapify(state: TripState, *, destination: str = "",
     around that center. Falls back to a city-aware fixture when the API key is
     missing or the request fails.
     """
-    dest = destination or state.itinerary_manifest.destination or "Tokyo"
+    dest = (destination or state.itinerary_manifest.destination or "").strip()
+    if not dest:
+        return ("[Geoapify] No destination set yet — tell me where you're headed "
+                "and I'll build the day-by-day plan.")
     state.itinerary_manifest.destination = dest
     tags = tags or state.group_profile.compiled_constraints.must_include_tags or ["food"]
 

@@ -171,6 +171,18 @@ def _normalize_city(raw: str) -> str:
     return " ".join(w.capitalize() for w in s.split(" "))
 
 
+def _extract_destination(text: str) -> str:
+    """Pull a destination city from free text (deterministic, real-LLM-safe)."""
+    t = text.lower()
+    for pat in (rf"\bto\s+({_KNOWN_CITY_RE})\b",
+                rf"\b(?:in|visit|trip to|explore|around)\s+({_KNOWN_CITY_RE})\b"):
+        m = re.search(pat, t)
+        if m:
+            return _normalize_city(m.group(1))
+    m = re.search(_KNOWN_CITY_RE, t)   # any known city mentioned anywhere
+    return _normalize_city(m.group(0)) if m else ""
+
+
 def _parse_constraints(text: str) -> dict:
     """Cheap NLP for the deterministic mock orchestrator.
 
@@ -412,6 +424,14 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
     transcript.append({"role": "user", "content": user_message})
     if user_name:
         _session_user_names[session_id] = user_name.split()[0]
+
+    # Real-LLM safety net: pin the destination from the user's own words when
+    # it isn't set yet, so tools never fall back to a fabricated city. (Mock mode
+    # routes off `destination`, so leave its flow untouched.)
+    if not USE_MOCK_LLM and not state.itinerary_manifest.destination:
+        dest = _extract_destination(user_message)
+        if dest:
+            state.itinerary_manifest.destination = dest
 
     # @-mention routes straight to that agent; otherwise the Supervisor decides.
     entry = detect_mention(user_message) or ENTRY_AGENT
