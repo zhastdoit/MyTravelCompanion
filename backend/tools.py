@@ -295,9 +295,13 @@ _GEOAPIFY_FIXTURE_BY_CITY = {
         ("Belem Tower",           "OUTDOOR", [38.6916, -9.2160], "historic"),
     ],
     "seattle": [
-        ("Pike Place Market",      "OUTDOOR", [47.6097, -122.3422], "food"),
-        ("Seattle Art Museum",     "INDOOR",  [47.6076, -122.3381], "art"),
-        ("Pioneer Square",         "OUTDOOR", [47.6015, -122.3343], "historic"),
+        ("Pike Place Market",        "OUTDOOR", [47.6097, -122.3422], "food"),
+        ("Seattle Art Museum",       "INDOOR",  [47.6076, -122.3381], "art"),
+        ("Pioneer Square",           "OUTDOOR", [47.6015, -122.3343], "historic"),
+        ("Space Needle",             "INDOOR",  [47.6205, -122.3493], "modern"),
+        ("Chihuly Garden and Glass", "INDOOR",  [47.6206, -122.3503], "art"),
+        ("Gas Works Park",           "OUTDOOR", [47.6456, -122.3344], "nature"),
+        ("Kerry Park Viewpoint",     "OUTDOOR", [47.6295, -122.3599], "historic"),
     ],
     "san francisco": [
         ("Ferry Building Marketplace", "OUTDOOR", [37.7955, -122.3937], "food"),
@@ -355,9 +359,12 @@ def _generic_blocks(
     we have no curated fixture and no live API key — never the wrong city."""
     lat, lon = center
     return [
-        (f"{destination} Public Market", "OUTDOOR", [lat, lon + 0.006], "food"),
-        (f"{destination} Art Museum",    "INDOOR",  [lat + 0.005, lon], "art"),
-        (f"{destination} Old Town",      "OUTDOOR", [lat - 0.005, lon - 0.005], "historic"),
+        (f"{destination} Public Market",  "OUTDOOR", [lat, lon + 0.006], "food"),
+        (f"{destination} Art Museum",     "INDOOR",  [lat + 0.005, lon], "art"),
+        (f"{destination} Old Town",       "OUTDOOR", [lat - 0.005, lon - 0.005], "historic"),
+        (f"{destination} City Park",      "OUTDOOR", [lat + 0.008, lon + 0.004], "nature"),
+        (f"{destination} Riverside Walk", "OUTDOOR", [lat - 0.007, lon + 0.006], "historic"),
+        (f"{destination} Night Market",   "OUTDOOR", [lat + 0.003, lon - 0.007], "food"),
     ]
 
 
@@ -416,10 +423,17 @@ def _block_type_for_category(cat: str) -> str:
     return "OUTDOOR"
 
 
+# Pack several activities into each day at these local hours instead of one
+# stop per day. ~4 slots = morning / lunch / afternoon / evening.
+_DAY_SLOTS = (9, 12, 15, 18)
+
+
 def _make_block(name: str, block_type: str, coords: list[float], i: int) -> CalendarBlock:
+    day = i // len(_DAY_SLOTS)
+    hour = _DAY_SLOTS[i % len(_DAY_SLOTS)]
     return CalendarBlock(
         id=f"blk_{uuid.uuid4().hex[:6]}",
-        timestamp_start=f"2026-06-{10 + i:02d}T{9 + i:02d}:00:00Z",
+        timestamp_start=f"2026-06-{10 + day:02d}T{hour:02d}:00:00Z",
         activity_name=name,
         type=block_type,
         coordinates=coords,
@@ -445,18 +459,19 @@ def query_geoapify(state: TripState, *, destination: str = "",
             blocks = _geoapify_fetch_places(dest, center, tags)
             if blocks:
                 added: list[str] = []
+                base = len(state.itinerary_manifest.calendar_blocks)
                 for i, blk in enumerate(blocks):
                     block = _make_block(blk["name"], blk["type"], blk["coords"],
-                                        len(state.itinerary_manifest.calendar_blocks) + i)
+                                        base + i)
                     state.itinerary_manifest.calendar_blocks.append(block)
                     added.append(f"{blk['name']} ({blk['type']})")
                 return f"[Geoapify] {dest}: added " + ", ".join(added)
 
     seed = _geoapify_fixture_blocks(dest)
     added = []
+    base = len(state.itinerary_manifest.calendar_blocks)
     for i, (name, typ, coords, _tag) in enumerate(seed):
-        block = _make_block(name, typ, list(coords),
-                            len(state.itinerary_manifest.calendar_blocks) + i)
+        block = _make_block(name, typ, list(coords), base + i)
         state.itinerary_manifest.calendar_blocks.append(block)
         added.append(f"{name} ({typ})")
     return f"[Geoapify mock] {dest}: added " + ", ".join(added)
@@ -481,7 +496,7 @@ def _geoapify_fetch_places(destination: str, center: tuple[float, float],
                 "categories": ",".join(cats),
                 "filter": f"circle:{lon},{lat},5000",
                 "bias": f"proximity:{lon},{lat}",
-                "limit": 5,
+                "limit": 8,
                 "apiKey": key,
             },
             timeout=_HTTP_TIMEOUT,

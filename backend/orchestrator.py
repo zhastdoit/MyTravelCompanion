@@ -121,6 +121,23 @@ def detect_form_submit(text: str) -> tuple[str, str] | None:
     return m.group("name").upper(), m.group("body").strip()
 
 
+def _flight_id_from_submit(body: str, state: TripState) -> str:
+    """Match a FLIGHT_PICKER confirmation back to the chosen option's id."""
+    m_air = re.search(r'airline="([^"]*)"', body)
+    m_price = re.search(r"price=\$?([\d.]+)", body)
+    airline = (m_air.group(1) if m_air else "").strip().lower()
+    price = float(m_price.group(1)) if m_price else None
+    opts = state.itinerary_manifest.flight_options
+    for o in opts:
+        if airline and o.airline.strip().lower() == airline:
+            return o.id
+    if price is not None:
+        for o in opts:
+            if abs(o.price_usd - price) < 1.0:
+                return o.id
+    return ""
+
+
 def _parse_form_constraints(body: str) -> dict:
     """Pull the structured fields out of a GROUP_AGREEMENT submission body."""
     args: dict = {}
@@ -466,6 +483,18 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         transcript.append({"role": "assistant", "content": reply})
         trail.append({"agent": active, "action": "ask_user", "result": reply})
         _say(chat, active, reply)
+
+    # A form submission consumes its form. Tools may have re-surfaced it
+    # mid-turn (update_constraints / query_amadeus); clear it here so the UI
+    # doesn't re-open the same picker/agreement after the user already answered.
+    submitted = detect_form_submit(user_message)
+    if submitted:
+        state.copilot_ui_hooks.active_form_component = "NONE"
+        state.copilot_ui_hooks.form_payload = {}
+        if submitted[0] == "FLIGHT_PICKER":
+            fid = _flight_id_from_submit(submitted[1], state)
+            if fid:
+                state.itinerary_manifest.selected_flight_id = fid
 
     save_state(state)
     return {
