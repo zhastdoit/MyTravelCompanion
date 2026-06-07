@@ -124,6 +124,26 @@ def load_trip(user_auth_id: str, trip_id: str) -> dict | None:
     return getattr(res, "data", None)
 
 
+def rename_trip(user_auth_id: str, trip_id: str, name: str) -> dict | None:
+    """Update a saved trip's display name. Returns the updated row, or None."""
+    client = _get_client()
+    if not client or not user_auth_id or not name.strip():
+        return None
+    try:
+        res = (
+            client.table(_TABLE)
+            .update({"name": name.strip()})
+            .eq("user_auth_id", user_auth_id)
+            .eq("id", trip_id)
+            .execute()
+        )
+    except Exception as err:  # noqa: BLE001
+        log.warning("[cold_store] rename_trip failed: %s", err)
+        return None
+    rows = getattr(res, "data", None) or []
+    return rows[0] if rows else None
+
+
 def _name_from_snapshot(snapshot: Any) -> str:
     """Default trip name = `Origin → Destination` (or 'Untitled trip')."""
     if not isinstance(snapshot, dict):

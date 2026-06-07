@@ -61,7 +61,7 @@ AGENT_META = {
     "logistician": {"name": "Route Rudy",    "role": "Itinerary Builder",  "emoji": "🧰",
                     "avatar": "/agents/route-rudy.png",
                     "desc": "Pulls flights and attractions and builds the day-by-day itinerary."},
-    "sentinel":    {"name": "Radar Rusty",   "role": "Conditions Monitor", "emoji": "🌦️",
+    "sentinel":    {"name": "Radar Rusty",   "role": "The Overthinker", "emoji": "🌦️",
                     "avatar": "/agents/radar-rusty.png",
                     "desc": "Watches live weather against your outdoor plans and raises the alarm."},
     "reshuffler":  {"name": "Patchy Pivot",  "role": "Recovery Planner",   "emoji": "🔀",

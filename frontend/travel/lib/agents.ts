@@ -18,6 +18,8 @@ export interface AgentDefinition {
   id: AgentId;
   label: string;
   tagline: string;
+  /** One-line "what this agent does", shown in the hover intro card. */
+  description: string;
   /** Tailwind-compatible inline color (used for dots and accents). */
   accent: string;
   avatarSrc: AgentAvatarSrc;
@@ -28,6 +30,8 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     id: AGENT_IDS.SUPERVISOR,
     label: "Chief Chrono",
     tagline: "Advisor Lead",
+    description:
+      "Routes your request to the right specialist and keeps the crew on track.",
     accent: "#6366f1",
     avatarSrc: getAgentAvatarSrc(AGENT_IDS.SUPERVISOR),
   },
@@ -35,6 +39,8 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     id: AGENT_IDS.DIPLOMAT,
     label: "Mingle Max",
     tagline: "Group Mediator",
+    description:
+      "Negotiates the group's conflicting budgets and preferences into one plan.",
     accent: "#16a34a",
     avatarSrc: getAgentAvatarSrc(AGENT_IDS.DIPLOMAT),
   },
@@ -42,13 +48,17 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     id: AGENT_IDS.LOGISTICIAN,
     label: "Route Rudy",
     tagline: "Itinerary Builder",
+    description:
+      "Pulls live flights and attractions and builds the day-by-day itinerary.",
     accent: "#3b82f6",
     avatarSrc: getAgentAvatarSrc(AGENT_IDS.LOGISTICIAN),
   },
   [AGENT_IDS.SENTINEL]: {
     id: AGENT_IDS.SENTINEL,
     label: "Radar Rusty",
-    tagline: "Conditions Monitor",
+    tagline: "The Overthinker",
+    description:
+      "Watches live weather against your outdoor plans and raises the alarm.",
     accent: "#f59e0b",
     avatarSrc: getAgentAvatarSrc(AGENT_IDS.SENTINEL),
   },
@@ -56,6 +66,8 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     id: AGENT_IDS.RESHUFFLER,
     label: "Patchy Pivot",
     tagline: "Recovery Planner",
+    description:
+      "Swaps rained-out activities for nearby indoor alternatives on the fly.",
     accent: "#a855f7",
     avatarSrc: getAgentAvatarSrc(AGENT_IDS.RESHUFFLER),
   },

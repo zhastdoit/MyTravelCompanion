@@ -19,6 +19,17 @@ interface FastApiAgentOptions {
 const CHAT_PATH = "/api/chat";
 const DEFAULT_AGENT_ID = "default";
 
+/**
+ * How long each agent appears to "think" before its message lands. The backend
+ * returns the whole crew transcript at once; we reveal it line-by-line so the
+ * UI feels like the agents are deliberating in turn. CopilotKit shows its
+ * typing indicator during these gaps (the run stays active).
+ */
+const THINKING_DELAY_MS = 900;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 const trimTrailingSlash = (url: string): string =>
   url.endsWith("/") ? url.slice(0, -1) : url;
 
@@ -109,8 +120,16 @@ export class FastApiAgent extends AbstractAgent {
           // Fan the per-agent chat lines out into separate assistant
           // messages so the chat UI can render the crew talking. Each line
           // gets its own messageId triplet (START / CONTENT / END) per the
-          // AGUI protocol.
+          // AGUI protocol. A short "thinking" pause before each line staggers
+          // them so the crew appears to deliberate one at a time, instead of
+          // dumping every message at once.
           for (const line of lines) {
+            // Don't make hard errors wait behind a thinking animation.
+            if (!isError) {
+              await sleep(THINKING_DELAY_MS);
+              if (cancelled.current) return;
+            }
+
             const messageId = randomUUID();
             const delta = line.emoji ? formatChatLine(line) : line.text;
             subscriber.next({

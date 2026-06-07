@@ -4,6 +4,7 @@ import { AGENT_ID_LIST, AGENTS, type AgentDefinition, type AgentStatusMap } from
 import { AGENT_STATUSES, type AgentStatus } from "@/types/agent";
 import { cn } from "@/lib/utils";
 import { AgentAvatar } from "./agent-avatar";
+import { AgentIntroCard } from "./agent-intro-card";
 
 interface AgentCrewProps {
   status: AgentStatusMap;
@@ -44,13 +45,13 @@ const AgentChip = ({ agent, status }: AgentChipProps) => {
   return (
     <li
       className={cn(
-        "group flex min-w-0 items-center gap-2 rounded-sm border bg-surface px-2 py-1.5 transition",
+        "group/hovercard relative flex min-w-0 items-center gap-2 rounded-sm border bg-surface px-2 py-1.5 transition",
         isLive
           ? "border-current shadow-[0_0_0_1px_currentColor_inset]"
           : "border-border",
       )}
       style={{ color: isLive ? agent.accent : undefined }}
-      title={`${agent.label}: ${STATUS_LABEL[status]}`}
+      title={`${agent.label} · ${agent.tagline} — ${STATUS_LABEL[status]}`}
     >
       <AgentAvatar agentId={agent.id} size={24} />
       <div className="flex min-w-0 flex-col leading-tight">
@@ -58,10 +59,15 @@ const AgentChip = ({ agent, status }: AgentChipProps) => {
           {agent.label}
         </span>
         <span className="truncate text-[10px] uppercase tracking-wider text-muted">
-          {STATUS_LABEL[status]}
+          {agent.tagline}
         </span>
       </div>
       <StatusDot status={status} accent={agent.accent} />
+
+      {/* Hover intro — detailed agent card */}
+      <div className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 origin-top scale-95 opacity-0 transition-all duration-150 group-hover/hovercard:scale-100 group-hover/hovercard:opacity-100">
+        <AgentIntroCard agentId={agent.id} />
+      </div>
     </li>
   );
 };

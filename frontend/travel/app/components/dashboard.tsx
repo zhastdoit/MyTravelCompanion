@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen, Share2 } from "lucide-react";
+import Link from "next/link";
+import { Library, PanelLeftClose, PanelLeftOpen, Share2 } from "lucide-react";
 import { useCopilotChat } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
@@ -191,6 +192,13 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                       : undefined
                   }
                 />
+                <Link
+                  href="/trips"
+                  className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 py-1 text-xs font-semibold transition hover:border-primary/60 hover:text-primary"
+                >
+                  <Library className="size-3.5" aria-hidden />
+                  My trips
+                </Link>
                 <button
                   type="button"
                   onClick={openShare}

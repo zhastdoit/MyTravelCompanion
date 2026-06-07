@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, MapPin, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { getSessionAccessToken, getSessionUser } from "@/lib/supabase/server";
 import { DEFAULT_BACKEND_URL } from "@/app/api/trip/_lib/backend";
 import type { SavedTripSummary, SavedTripsResponse } from "@/lib/saved-trips";
+import { SavedTripRow } from "@/app/components/saved-trip-row";
 
 export const dynamic = "force-dynamic";
 
@@ -23,18 +24,6 @@ const fetchTrips = async (): Promise<SavedTripSummary[]> => {
     return body.trips ?? [];
   } catch {
     return [];
-  }
-};
-
-const formatDate = (iso: string): string => {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
   }
 };
 
@@ -74,30 +63,7 @@ export default async function TripsPage() {
         <ul className="flex flex-col gap-3">
           {trips.map((trip) => (
             <li key={trip.id}>
-              <Link
-                href={`/trip/${encodeURIComponent(trip.session_id)}`}
-                className="group flex items-center justify-between gap-4 rounded-md border border-border bg-surface px-4 py-3 transition hover:border-primary/60"
-              >
-                <div className="flex min-w-0 flex-1 items-center gap-3">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-sm bg-primary/10 text-primary">
-                    <MapPin className="size-4" aria-hidden />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">
-                      {trip.name || `${trip.origin || "?"} → ${trip.destination || "?"}`}
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
-                      <span>{trip.block_count} activit{trip.block_count === 1 ? "y" : "ies"}</span>
-                      <span aria-hidden>•</span>
-                      <span>Updated {formatDate(trip.updated_at)}</span>
-                    </div>
-                  </div>
-                </div>
-                <ArrowRight
-                  className="size-4 shrink-0 text-muted transition group-hover:translate-x-0.5 group-hover:text-primary"
-                  aria-hidden
-                />
-              </Link>
+              <SavedTripRow trip={trip} />
             </li>
           ))}
         </ul>

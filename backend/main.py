@@ -87,6 +87,10 @@ class SaveTripIn(BaseModel):
     name: str = ""
 
 
+class RenameTripIn(BaseModel):
+    name: str
+
+
 class SelectIn(BaseModel):
     flight_id: str
 
@@ -193,3 +197,18 @@ def get_trip(trip_id: str, user: AuthUser = Depends(require_user)):
     if not user.user_auth_id or user.is_anonymous:
         return {"trip": None}
     return {"trip": cold_store.load_trip(user.user_auth_id, trip_id)}
+
+
+@app.patch("/api/trips/{trip_id}")
+def rename_trip(trip_id: str, body: RenameTripIn,
+                user: AuthUser = Depends(require_user)):
+    if not user.user_auth_id or user.is_anonymous:
+        return {"ok": False, "reason": "auth required"}
+    if not body.name.strip():
+        return {"ok": False, "reason": "name required"}
+    row = cold_store.rename_trip(user.user_auth_id, trip_id, body.name)
+    if not row:
+        return {"ok": False,
+                "reason": "cold store unavailable" if not cold_store.is_enabled()
+                else "rename failed"}
+    return {"ok": True, "trip": row}

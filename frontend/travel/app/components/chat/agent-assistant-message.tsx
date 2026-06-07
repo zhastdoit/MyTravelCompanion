@@ -8,6 +8,7 @@ import {
 import { AGENTS, AGENT_IDS, type AgentId } from "@/lib/agents";
 import { useAgentSpeaker } from "./agent-speaker-context";
 import { AgentAvatar } from "../agent-avatar";
+import { AgentIntroCard } from "../agent-intro-card";
 
 // Backend chat[] lines render as `**<emoji> <name>** — <text>`. Map that prefix
 // back to an AgentId so each bubble shows the right avatar, regardless of the
@@ -63,7 +64,7 @@ export const AgentAssistantMessage = (props: AssistantMessageProps) => {
         style={{ backgroundColor: agent.accent }}
         aria-hidden
       />
-      <div className="mb-1 flex items-center gap-1.5">
+      <div className="group/hovercard relative mb-1 flex w-fit items-center gap-1.5">
         <AgentAvatar agentId={agent.id} size={20} />
         <span
           className="text-[11px] font-semibold uppercase tracking-wider"
@@ -74,6 +75,11 @@ export const AgentAssistantMessage = (props: AssistantMessageProps) => {
         <span className="text-[10px] text-[color:var(--color-muted)]">
           · {agent.tagline}
         </span>
+
+        {/* Hover intro — detailed agent card */}
+        <div className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 origin-top scale-95 opacity-0 transition-all duration-150 group-hover/hovercard:scale-100 group-hover/hovercard:opacity-100">
+          <AgentIntroCard agentId={agent.id} />
+        </div>
       </div>
       <DefaultAssistantMessage {...props} />
     </div>
