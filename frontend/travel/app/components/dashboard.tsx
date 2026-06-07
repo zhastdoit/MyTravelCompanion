@@ -45,7 +45,6 @@ import {
 } from "@/lib/form-message";
 import { AuthMenu } from "./auth-menu";
 import { SaveTripButton } from "./save-trip-button";
-import { cn } from "@/lib/utils";
 
 interface DashboardProps {
   /** Stable session id, mirrored as the FastAPI `session_id` and CopilotKit `threadId`. */
@@ -192,109 +191,103 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
         {/* LEFT — the trip "navigation" panel. Collapsible: it pops up with the
             crew + map + itinerary once a road is planned, and hides on demand.
             Before any plan exists it shows the onboarding welcome. */}
-        {!panelHidden ? (
-          <div className="flex min-w-0 flex-1 flex-col border-r border-border">
-            {!isEmpty ? (
-              <div className="flex items-stretch border-b border-border bg-muted-surface/40">
-                <AgentCrew
-                  status={agentStatus}
-                  className="min-w-0 flex-1 border-0 bg-transparent"
-                />
+        {/* LEFT — itinerary list, Google-Maps style. Collapsible; pops up
+            once a road is planned and can be hidden to give the map more room. */}
+        {!isEmpty && !panelHidden ? (
+          <aside className="flex w-[21rem] min-w-0 shrink-0 flex-col border-r border-border bg-surface">
+            <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+              <h2 className="text-sm font-semibold uppercase tracking-wider">
+                Itinerary
+              </h2>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] text-muted tabular-nums">
+                  {itinerary_manifest.calendar_blocks.length} blocks
+                </span>
                 <button
                   type="button"
                   onClick={() => setPanelHidden(true)}
-                  title="Hide trip panel"
-                  className="inline-flex shrink-0 items-center gap-1 border-l border-border px-3 text-[11px] font-medium text-muted transition hover:bg-surface hover:text-primary"
+                  title="Hide itinerary"
+                  className="inline-flex items-center text-muted transition hover:text-primary"
                 >
-                  <PanelLeftClose className="size-3.5" aria-hidden />
-                  Hide
+                  <PanelLeftClose className="size-4" aria-hidden />
                 </button>
               </div>
-            ) : null}
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {isEmpty ? (
-                <OnboardingCard
-                  onPrompt={(prompt) =>
-                    void appendMessage(
-                      new TextMessage({ role: Role.User, content: prompt }),
-                    )
-                  }
-                />
-              ) : (
-                <div className="flex flex-col gap-4 lg:gap-5">
-                  {activeForm === ACTIVE_FORM_COMPONENT.GROUP_AGREEMENT ? (
-                    <GroupAgreementForm
-                      proposedBudgetUsd={group_profile.compiled_constraints.budget_ceiling_usd}
-                      proposedPacing={group_profile.compiled_constraints.pacing}
-                      proposedMustIncludeTags={group_profile.compiled_constraints.must_include_tags}
-                      proposedAvoidTags={group_profile.compiled_constraints.avoid_tags}
-                      rationale="Diplomat compiled these constraints from the group's last exchange. Approve to lock them in."
-                      status="executing"
-                      onRespond={handleGroupAgreement}
-                    />
-                  ) : null}
-
-                  {activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER ? (
-                    <FlightCheckoutCard
-                      airline={flightStub.airline}
-                      flightNumber={flightStub.flightNumber}
-                      origin={flightStub.origin}
-                      destination={flightStub.destination}
-                      departure={flightStub.departure}
-                      arrival={flightStub.arrival}
-                      durationMinutes={flightStub.durationMinutes}
-                      priceUsd={flightStub.priceUsd}
-                      status="complete"
-                      onConfirm={handleFlightCheckout}
-                    />
-                  ) : null}
-
-                  <section className="min-h-[340px]">
-                    <TripMap
-                      blocks={itinerary_manifest.calendar_blocks}
-                      className="h-[46vh] min-h-[340px] w-full"
-                    />
-                  </section>
-
-                  <div className="rounded-md border border-border bg-surface p-3">
-                    <div className="mb-2.5 flex items-baseline justify-between border-b border-border pb-2">
-                      <h2 className="text-sm font-semibold uppercase tracking-wider">
-                        Itinerary
-                      </h2>
-                      <span className="font-mono text-[11px] text-muted tabular-nums">
-                        {itinerary_manifest.calendar_blocks.length} blocks
-                      </span>
-                    </div>
-                    <ItineraryTimeline blocks={itinerary_manifest.calendar_blocks} />
-                  </div>
-                </div>
-              )}
             </div>
-          </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+              {activeForm === ACTIVE_FORM_COMPONENT.GROUP_AGREEMENT ? (
+                <GroupAgreementForm
+                  proposedBudgetUsd={group_profile.compiled_constraints.budget_ceiling_usd}
+                  proposedPacing={group_profile.compiled_constraints.pacing}
+                  proposedMustIncludeTags={group_profile.compiled_constraints.must_include_tags}
+                  proposedAvoidTags={group_profile.compiled_constraints.avoid_tags}
+                  rationale="Diplomat compiled these constraints from the group's last exchange. Approve to lock them in."
+                  status="executing"
+                  onRespond={handleGroupAgreement}
+                />
+              ) : null}
+
+              {activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER ? (
+                <FlightCheckoutCard
+                  airline={flightStub.airline}
+                  flightNumber={flightStub.flightNumber}
+                  origin={flightStub.origin}
+                  destination={flightStub.destination}
+                  departure={flightStub.departure}
+                  arrival={flightStub.arrival}
+                  durationMinutes={flightStub.durationMinutes}
+                  priceUsd={flightStub.priceUsd}
+                  status="complete"
+                  onConfirm={handleFlightCheckout}
+                />
+              ) : null}
+
+              <ItineraryTimeline blocks={itinerary_manifest.calendar_blocks} />
+            </div>
+          </aside>
         ) : null}
 
-        {/* RIGHT — the conversation. Permanent, docked: this is the hero
-            feature (talking with friends + agents). Expands to full width
-            when the trip panel is hidden. */}
-        <div
-          className={cn(
-            "relative flex min-w-0 flex-col bg-surface",
-            panelHidden ? "flex-1" : "w-full lg:w-[32rem] xl:w-[38rem]",
+        {/* CENTER — the map (or onboarding before any plan). The agent crew
+            rides along the top, like a Maps search bar. Grows to fill the
+            space freed when the itinerary panel is hidden. */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {isEmpty ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <OnboardingCard
+                onPrompt={(prompt) =>
+                  void appendMessage(
+                    new TextMessage({ role: Role.User, content: prompt }),
+                  )
+                }
+              />
+            </div>
+          ) : (
+            <>
+              <AgentCrew status={agentStatus} />
+              <div className="relative min-h-0 flex-1 p-3">
+                {panelHidden ? (
+                  <button
+                    type="button"
+                    onClick={() => setPanelHidden(false)}
+                    title="Show itinerary"
+                    className="absolute left-5 top-5 z-10 inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 text-[11px] font-medium text-muted shadow-sm transition hover:text-primary"
+                  >
+                    <PanelLeftOpen className="size-3.5" aria-hidden />
+                    Itinerary
+                  </button>
+                ) : null}
+                <TripMap
+                  blocks={itinerary_manifest.calendar_blocks}
+                  className="h-full w-full"
+                />
+              </div>
+            </>
           )}
-        >
-          {!isEmpty && panelHidden ? (
-            <button
-              type="button"
-              onClick={() => setPanelHidden(false)}
-              title="Show trip panel"
-              className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 text-[11px] font-medium text-muted shadow-sm transition hover:text-primary"
-            >
-              <PanelLeftOpen className="size-3.5" aria-hidden />
-              Show trip
-            </button>
-          ) : null}
+        </div>
 
+        {/* RIGHT — the conversation. Permanent, docked: this is the hero
+            feature (talking with friends + agents). */}
+        <div className="flex w-full min-w-0 shrink-0 flex-col border-l border-border bg-surface lg:w-[30rem] xl:w-[34rem]">
           <CopilotChat
             className="flex h-full min-h-0 flex-col"
             labels={{
