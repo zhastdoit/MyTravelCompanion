@@ -372,6 +372,40 @@ _CITY_CENTER = {
     "singapore": (1.3521, 103.8198), "dubai": (25.2048, 55.2708),
     "istanbul": (41.0082, 28.9784), "mexico city": (19.4326, -99.1332),
     "honolulu": (21.3069, -157.8583),
+    # East / Southeast / South Asia
+    "beijing": (39.9042, 116.4074), "shanghai": (31.2304, 121.4737),
+    "shenzhen": (22.5431, 114.0579), "guangzhou": (23.1291, 113.2644),
+    "chengdu": (30.5728, 104.0668), "hong kong": (22.3193, 114.1694),
+    "seoul": (37.5665, 126.9780), "busan": (35.1796, 129.0756),
+    "taipei": (25.0330, 121.5654), "osaka": (34.6937, 135.5023),
+    "kyoto": (35.0116, 135.7681), "delhi": (28.6139, 77.2090),
+    "mumbai": (19.0760, 72.8777), "bangalore": (12.9716, 77.5946),
+    "jakarta": (-6.2088, 106.8456), "kuala lumpur": (3.1390, 101.6869),
+    "manila": (14.5995, 120.9842), "ho chi minh city": (10.8231, 106.6297),
+    "hanoi": (21.0278, 105.8342),
+    # Europe
+    "athens": (37.9838, 23.7275), "prague": (50.0755, 14.4378),
+    "budapest": (47.4979, 19.0402), "warsaw": (52.2297, 21.0122),
+    "stockholm": (59.3293, 18.0686), "copenhagen": (55.6761, 12.5683),
+    "oslo": (59.9139, 10.7522), "helsinki": (60.1699, 24.9384),
+    "dublin": (53.3498, -6.2603), "edinburgh": (55.9533, -3.1883),
+    "brussels": (50.8503, 4.3517), "zurich": (47.3769, 8.5417),
+    "munich": (48.1351, 11.5820), "milan": (45.4642, 9.1900),
+    "venice": (45.4408, 12.3155), "florence": (43.7696, 11.2558),
+    "porto": (41.1579, -8.6291), "marrakech": (31.6295, -7.9811),
+    # Middle East / Africa / Oceania / Latin America
+    "tel aviv": (32.0853, 34.7818), "doha": (25.2854, 51.5310),
+    "abu dhabi": (24.4539, 54.3773), "cairo": (30.0444, 31.2357),
+    "cape town": (-33.9249, 18.4241), "nairobi": (-1.2921, 36.8219),
+    "auckland": (-36.8485, 174.7633), "melbourne": (-37.8136, 144.9631),
+    "sao paulo": (-23.5558, -46.6396), "rio de janeiro": (-22.9068, -43.1729),
+    "buenos aires": (-34.6037, -58.3816), "lima": (-12.0464, -77.0428),
+    "bogota": (4.7110, -74.0721), "santiago": (-33.4489, -70.6693),
+    # More North America
+    "montreal": (45.5017, -73.5673), "portland": (45.5152, -122.6784),
+    "san diego": (32.7157, -117.1611), "las vegas": (36.1699, -115.1398),
+    "new orleans": (29.9511, -90.0715), "nashville": (36.1627, -86.7816),
+    "philadelphia": (39.9526, -75.1652), "atlanta": (33.7490, -84.3880),
 }
 
 
@@ -398,10 +432,11 @@ def _geoapify_fixture_blocks(destination: str) -> list[tuple[str, str, list[floa
     center = _CITY_CENTER.get(key)
     if center:
         return _generic_blocks(destination, center)
-    # Unknown city with no key: still name the blocks after the real destination
-    # (placed at a neutral center) rather than silently showing Tokyo.
-    log.warning("[geoapify] no fixture/center for %r; using generic blocks", destination)
-    return _generic_blocks(destination, (0.0, 0.0))
+    # Truly unknown city with no key: return empty so callers fall back to a
+    # real default center — never (0, 0), which drops blocks in the ocean.
+    # (Set GEOAPIFY_API_KEY for accurate geocoding of any city.)
+    log.warning("[geoapify] no fixture/center for %r; needs GEOAPIFY_API_KEY", destination)
+    return []
 
 
 def _geocode(destination: str) -> tuple[float, float] | None:
