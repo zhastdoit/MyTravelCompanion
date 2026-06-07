@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 import "@copilotkit/react-ui/styles.css";
 import "./globals.css";
 
-const sans = Plus_Jakarta_Sans({
+const sans = Inter({
   variable: "--font-geist-sans",
   subsets: ["latin"],
 });

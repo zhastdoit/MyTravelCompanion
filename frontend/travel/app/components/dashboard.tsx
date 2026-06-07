@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen, Share2 } from "lucide-react";
 import { useCopilotAction, useCopilotChat } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
@@ -38,6 +38,7 @@ import { NotificationToaster } from "./notification-toaster";
 import { OnboardingCard } from "./onboarding-card";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { FlightPickerModal } from "./generative/flight-picker-modal";
+import { FlightPickerChatCard } from "./generative/flight-picker-chat-card";
 import { FlightsSummaryCard } from "./generative/flights-summary-card";
 import { GroupAgreementChatCard } from "./generative/group-agreement-chat-card";
 import type { GroupAgreementResult } from "./generative/group-agreement-form";
@@ -115,15 +116,6 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
   const activeForm = tripState.copilot_ui_hooks.active_form_component;
   const inferredAgent = FORM_COMPONENT_TO_AGENT[activeForm] ?? null;
 
-  // Auto-open the matching form when an agent surfaces it. Keyed on the form
-  // value, so it fires on the transition but not on every re-fetch — once the
-  // user closes it, it stays closed.
-  useEffect(() => {
-    if (activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER) {
-      setFlightPickerOpen(true);
-    }
-  }, [activeForm]);
-
   const agentStatus = useMemo<AgentStatusMap>(() => {
     if (!inferredAgent) return INITIAL_AGENT_STATUS;
     return { ...INITIAL_AGENT_STATUS, [inferredAgent]: AGENT_STATUSES.ACTIVE };
@@ -177,6 +169,25 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
       <GroupAgreementChatCard
         args={args as Record<string, unknown>}
         onRespond={handleGroupAgreement}
+      />
+    ),
+  });
+
+  // Generative UI: the FastApiAgent emits a `flight_picker` tool call when the
+  // Logistician surfaces flights; render the picker inline in the chat.
+  useCopilotAction({
+    name: "flight_picker",
+    description: "Pick a flight from the options the crew found.",
+    available: "frontend",
+    parameters: [
+      { name: "title", type: "string" },
+      { name: "options", type: "object[]" },
+      { name: "selectedId", type: "string" },
+    ],
+    render: ({ args }) => (
+      <FlightPickerChatCard
+        args={args as Record<string, unknown>}
+        onSelect={handleFlightSelect}
       />
     ),
   });
@@ -337,7 +348,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
             labels={{
               title: "My Travel Companion Crew",
               initial:
-                "Hey! I'm your travel crew. Ask: 'Plan a relaxed 3-day trip from JFK to Paris under $1500.'",
+                "**🧭 Chief Chrono** — Hi, I'm Chief Chrono, your trip lead. Tell me where you're dreaming of going — with your group's budget, dates, and the vibe you're after — and I'll rally the crew to plan it together. ✨",
             }}
             AssistantMessage={AgentAssistantMessage}
             UserMessage={ChatUserMessage}

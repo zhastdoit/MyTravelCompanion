@@ -47,16 +47,25 @@ interface ReplyResult {
    * to a CopilotKit action (`useCopilotAction`) the frontend registers; we emit
    * it as an AGUI tool call so CopilotKit renders the action's UI in-stream.
    */
-  form?: { name: string; args: Record<string, unknown> } | null;
+  form?: {
+    name: string;
+    args: Record<string, unknown>;
+    /** Markdown intro line shown above the card (carries the agent prefix). */
+    intro: string;
+  } | null;
 }
 
 /** Detect a form the backend wants surfaced from its returned TripState. */
 const detectForm = (data: BackendChatResponse): ReplyResult["form"] => {
   const hooks = data.state?.copilot_ui_hooks;
   const c = data.state?.group_profile?.compiled_constraints;
+  const m = data.state?.itinerary_manifest;
+
   if (hooks?.active_form_component === "GROUP_AGREEMENT" && c) {
     return {
       name: "group_agreement",
+      intro:
+        "**🤝 Mingle Max** — Here's the group's plan — confirm or tweak it below 👇",
       args: {
         budget_ceiling_usd: c.budget_ceiling_usd,
         pacing: c.pacing,
@@ -65,6 +74,23 @@ const detectForm = (data: BackendChatResponse): ReplyResult["form"] => {
       },
     };
   }
+
+  if (
+    hooks?.active_form_component === "FLIGHT_PICKER" &&
+    m?.flight_options?.length
+  ) {
+    return {
+      name: "flight_picker",
+      intro:
+        "**🧰 Route Rudy** — I found some flights — pick one or skip for now 👇",
+      args: {
+        title: `Flights ${m.origin} → ${m.destination}`,
+        options: m.flight_options,
+        selectedId: m.selected_flight_id ?? "",
+      },
+    };
+  }
+
   return null;
 };
 
@@ -194,10 +220,9 @@ export class FastApiAgent extends AbstractAgent {
             subscriber.next({
               type: EventType.TEXT_MESSAGE_CONTENT,
               messageId: parentMessageId,
-              // Prefix with the Diplomat so the chat renders it as her bubble
-              // (avatar + name); AgentAssistantMessage strips the prefix.
-              delta:
-                "**🤝 Mingle Max** — Here's the group's plan — confirm or tweak it below 👇",
+              // Intro carries the agent prefix so the chat renders it as that
+              // agent's bubble (avatar + name); AgentAssistantMessage strips it.
+              delta: form.intro,
             });
             subscriber.next({
               type: EventType.TEXT_MESSAGE_END,
