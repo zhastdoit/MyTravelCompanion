@@ -66,7 +66,7 @@ export class FastApiAgent extends AbstractAgent {
   constructor(options: FastApiAgentOptions) {
     super({
       agentId: options.agentId ?? DEFAULT_AGENT_ID,
-      description: "SyncTrip FastAPI agent crew",
+      description: "My Travel Companion FastAPI agent crew",
     });
     this.options = options;
     this.backendUrl = trimTrailingSlash(options.backendUrl);

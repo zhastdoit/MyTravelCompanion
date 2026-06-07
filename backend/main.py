@@ -37,7 +37,7 @@ from fastapi.exception_handlers import http_exception_handler
 
 from auth import AuthUser, auth_enabled, require_user
 from store import load_state, save_state, BACKEND
-from orchestrator import run_turn, reset, USE_MOCK_LLM
+from orchestrator import run_turn, reset, USE_MOCK_LLM, AGENT_META
 import cold_store
 import cost
 
@@ -96,6 +96,13 @@ def health():
     return {"ok": True, "llm_mode": "mock" if USE_MOCK_LLM else "openai",
             "store": BACKEND, "session_usd_cap": cost.CAP,
             "auth": "enabled" if auth_enabled() else "disabled"}
+
+
+@app.get("/api/agents")
+def list_agents():
+    """The agent roster (name, role, emoji, avatar, description) for UI tooltips."""
+    order = ["supervisor", "diplomat", "logistician", "sentinel", "reshuffler"]
+    return [{"key": k, **AGENT_META[k]} for k in order]
 
 
 @app.get("/api/cost/{sid}")

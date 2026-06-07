@@ -248,7 +248,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
         defaultOpen
         clickOutsideToClose={false}
         labels={{
-          title: "SyncTrip Crew",
+          title: "My Travel Companion Crew",
           initial:
             "Hey! I'm your travel crew. Ask: 'Plan a relaxed 3-day trip from JFK to Paris under $1500.'",
         }}

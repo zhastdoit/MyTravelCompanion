@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SyncTrip",
+  title: "My Travel Companion",
   description: "Group travel, planned by a team of AI agents.",
 };
 

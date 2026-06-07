@@ -52,19 +52,30 @@ def detect_mention(text: str) -> str | None:
 
 # Display metadata + phrasing so each agent "speaks" a visible line in the chat box.
 AGENT_META = {
-    "supervisor":  ("🧭", "Supervisor"),
-    "diplomat":    ("🤝", "Diplomat"),
-    "logistician": ("🧰", "Logistician"),
-    "sentinel":    ("🌦️", "Sentinel"),
-    "reshuffler":  ("🔀", "Reshuffler"),
-    "user":        ("🧑", "You"),
+    "supervisor":  {"name": "Chief Chrono",  "role": "Advisor Lead",       "emoji": "🧭",
+                    "avatar": "/agents/chief-chrono.png",
+                    "desc": "Routes your request to the right specialist and keeps the crew on track."},
+    "diplomat":    {"name": "Mingle Max",    "role": "Group Mediator",     "emoji": "🤝",
+                    "avatar": "/agents/mingle-max.png",
+                    "desc": "Negotiates the group's conflicting budgets and preferences into one plan."},
+    "logistician": {"name": "Route Rudy",    "role": "Itinerary Builder",  "emoji": "🧰",
+                    "avatar": "/agents/route-rudy.png",
+                    "desc": "Pulls flights and attractions and builds the day-by-day itinerary."},
+    "sentinel":    {"name": "Radar Rusty",   "role": "Conditions Monitor", "emoji": "🌦️",
+                    "avatar": "/agents/radar-rusty.png",
+                    "desc": "Watches live weather against your outdoor plans and raises the alarm."},
+    "reshuffler":  {"name": "Patchy Pivot",  "role": "Recovery Planner",   "emoji": "🔀",
+                    "avatar": "/agents/patchy-pivot.png",
+                    "desc": "Swaps rained-out activities for nearby indoor alternatives on the fly."},
+    "user":        {"name": "You", "role": "", "emoji": "🧑", "avatar": "", "desc": ""},
 }
 _TOOL_ICON = {"update_constraints": "🤝", "query_amadeus": "✈️", "query_geoapify": "📍",
               "check_weather": "🌦️", "reshuffle_block": "🔧"}
 
 
-def _meta(a: str) -> tuple[str, str]:
-    return AGENT_META.get(a, ("🤖", a.title()))
+def _meta(a: str) -> dict:
+    return AGENT_META.get(a, {"name": a.title(), "role": "", "emoji": "🤖",
+                              "avatar": "", "desc": ""})
 
 
 def _clean(s: str) -> str:
@@ -72,8 +83,9 @@ def _clean(s: str) -> str:
 
 
 def _say(chat: list, agent: str, text: str) -> None:
-    em, nm = _meta(agent)
-    chat.append({"agent": agent, "emoji": em, "name": nm, "text": text})
+    m = _meta(agent)
+    chat.append({"agent": agent, "name": m["name"], "role": m["role"],
+                 "emoji": m["emoji"], "avatar": m["avatar"], "desc": m["desc"], "text": text})
 
 
 @dataclass
@@ -405,8 +417,8 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         if d.kind == "transfer":
             trail.append({"agent": active, "action": f"→ {d.target}"})
             if d.target != "supervisor":            # announce who's being brought in
-                tem, tnm = _meta(d.target)
-                _say(chat, active, f"Bringing in the {tnm} {tem}…")
+                tm = _meta(d.target)
+                _say(chat, active, f"Bringing in {tm['name']} {tm['emoji']}…")
             active = d.target
             transfers_since_work += 1
             if transfers_since_work >= LOOP_LIMIT:   # agents ping-ponging with no progress

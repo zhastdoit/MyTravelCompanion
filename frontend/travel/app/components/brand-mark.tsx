@@ -10,7 +10,7 @@ export const BrandMark = ({ className }: BrandMarkProps) => (
   <svg
     viewBox="0 0 24 24"
     role="img"
-    aria-label="SyncTrip"
+    aria-label="My Travel Companion"
     className={className}
     fill="none"
   >

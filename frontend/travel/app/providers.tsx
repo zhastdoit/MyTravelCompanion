@@ -14,7 +14,7 @@ interface ProvidersProps {
 }
 
 /**
- * SyncTrip uses a *self-hosted* CopilotKit runtime: `app/api/copilotkit/route.ts`
+ * My Travel Companion uses a *self-hosted* CopilotKit runtime: `app/api/copilotkit/route.ts`
  * mounts `CopilotRuntime` and bridges chat into FastAPI via `FastApiAgent`.
  * Because `runtimeUrl` is set, we do NOT need a CopilotKit Cloud API key —
  * that env var is only relevant if you swap this for `https://api.cloud.copilotkit.ai`.

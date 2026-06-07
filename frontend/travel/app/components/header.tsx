@@ -25,7 +25,7 @@ export const Header = ({ itinerary, groupProfile, rightSlot }: HeaderProps) => {
         <span className="grid size-7 place-items-center rounded-sm bg-primary text-primary-foreground">
           <BrandMark className="size-4" />
         </span>
-        <span className="text-[15px] leading-none">SyncTrip</span>
+        <span className="text-[15px] leading-none">My Travel Companion</span>
       </div>
 
       <span className="hidden h-5 w-px bg-border md:inline-block" aria-hidden />
