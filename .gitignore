@@ -4,3 +4,9 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# editor temp files
+*.swp
+*.swo
+*~
+.DS_Store
