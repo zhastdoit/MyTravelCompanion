@@ -183,15 +183,19 @@ def _normalize_city(raw: str) -> str:
 
 
 def _extract_destination(text: str) -> str:
-    """Pull a destination city from free text (deterministic, real-LLM-safe)."""
+    """Pull a destination city from free text (deterministic, real-LLM-safe).
+
+    Only matches explicit destination phrasings ("to/in/visit/trip to <city>").
+    A bare "any city mentioned" match is intentionally avoided — it wrongly
+    treats the *origin* as the destination (e.g. "from New York")."""
     t = text.lower()
     for pat in (rf"\bto\s+({_KNOWN_CITY_RE})\b",
-                rf"\b(?:in|visit|trip to|explore|around)\s+({_KNOWN_CITY_RE})\b"):
+                rf"\b(?:visit|trip to|explore)\s+({_KNOWN_CITY_RE})\b",
+                rf"\bin\s+({_KNOWN_CITY_RE})\b"):
         m = re.search(pat, t)
-        if m:
+        if m and not re.search(rf"\bfrom\s+{m.group(1)}\b", t):
             return _normalize_city(m.group(1))
-    m = re.search(_KNOWN_CITY_RE, t)   # any known city mentioned anywhere
-    return _normalize_city(m.group(0)) if m else ""
+    return ""
 
 
 def _parse_duration_days(text: str) -> int:
@@ -645,13 +649,15 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         trail.append({"agent": active, "action": "ask_user", "result": reply})
         _say(chat, active, reply)
 
-    # A form submission consumes its form. Tools may have re-surfaced it
-    # mid-turn (update_constraints / query_amadeus); clear it here so the UI
-    # doesn't re-open the same picker/agreement after the user already answered.
+    # A form submission consumes the form the user answered — but only that one.
+    # Retire it so the UI doesn't re-open the same picker. Crucially, if a tool
+    # surfaced a DIFFERENT form this same turn (e.g. approving GROUP_AGREEMENT
+    # leads the Logistician to surface FLIGHT_PICKER), leave that new form up.
     submitted = detect_form_submit(user_message)
     if submitted:
-        state.copilot_ui_hooks.active_form_component = "NONE"
-        state.copilot_ui_hooks.form_payload = {}
+        if state.copilot_ui_hooks.active_form_component == submitted[0]:
+            state.copilot_ui_hooks.active_form_component = "NONE"
+            state.copilot_ui_hooks.form_payload = {}
         if submitted[0] == "FLIGHT_PICKER":
             fid = _flight_id_from_submit(submitted[1], state)
             if fid:
