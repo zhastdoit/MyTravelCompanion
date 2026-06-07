@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Library, PanelLeftClose, PanelLeftOpen, Share2 } from "lucide-react";
 import { useCopilotChat } from "@copilotkit/react-core";
@@ -38,6 +38,7 @@ import { NotificationToaster } from "./notification-toaster";
 import { OnboardingCard } from "./onboarding-card";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { FlightPickerModal } from "./generative/flight-picker-modal";
+import { FlightsSummaryCard } from "./generative/flights-summary-card";
 import {
   GroupAgreementForm,
   type GroupAgreementResult,
@@ -93,6 +94,11 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
     null,
   );
 
+  // The flight picker modal's open state is local so the user can reopen it
+  // from the panel and dismissing it sticks (independent of the backend's
+  // active_form, which a re-fetch would otherwise revert).
+  const [flightPickerOpen, setFlightPickerOpen] = useState(false);
+
   const handleBackendState = useCallback(
     (next: Parameters<typeof toFrontendTripState>[0]) => {
       setTripState((prev) => toFrontendTripState(next, prev));
@@ -109,6 +115,15 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
 
   const activeForm = tripState.copilot_ui_hooks.active_form_component;
   const inferredAgent = FORM_COMPONENT_TO_AGENT[activeForm] ?? null;
+
+  // Auto-open the picker when the Logistician surfaces it. Keyed on the form
+  // value, so it fires on the NONE→FLIGHT_PICKER transition but not on every
+  // re-fetch — once the user closes it, it stays closed.
+  useEffect(() => {
+    if (activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER) {
+      setFlightPickerOpen(true);
+    }
+  }, [activeForm]);
 
   const agentStatus = useMemo<AgentStatusMap>(() => {
     if (!inferredAgent) return INITIAL_AGENT_STATUS;
@@ -161,6 +176,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
         destination: option.arrive,
         priceUsd: option.price_usd,
       });
+      setFlightPickerOpen(false);
     },
     [handleFlightCheckout],
   );
@@ -253,6 +269,12 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                 />
               ) : null}
 
+              <FlightsSummaryCard
+                options={itinerary_manifest.flight_options}
+                selectedId={itinerary_manifest.selected_flight_id}
+                onOpen={() => setFlightPickerOpen(true)}
+              />
+
               <ItineraryTimeline
                 blocks={itinerary_manifest.calendar_blocks}
                 highlightedId={highlightedBlockId}
@@ -317,14 +339,13 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
         </div>
       </div>
 
-      {activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER &&
-      itinerary_manifest.flight_options.length > 0 ? (
+      {flightPickerOpen && itinerary_manifest.flight_options.length > 0 ? (
         <FlightPickerModal
           title={`Flights ${itinerary_manifest.origin} → ${itinerary_manifest.destination}`}
           options={itinerary_manifest.flight_options}
           selectedId={itinerary_manifest.selected_flight_id}
           onSelect={handleFlightSelect}
-          onClose={dismissActiveForm}
+          onClose={() => setFlightPickerOpen(false)}
         />
       ) : null}
 
