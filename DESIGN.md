@@ -111,6 +111,30 @@ Instead of a complex graph, these are defined as standalone OpenAI Assistant per
 
     The Adaptive Reshuffler: The live fixer. Swaps compromised outdoor events for nearby INDOOR alternatives, rewrites the calendar block in Redis, and pushes a notification string to system_notifications.
 
+### 5.1 How the Agents Communicate
+
+The agents are not isolated — context and control flow between them through two shared channels, so each agent acts with full awareness of what the others did:
+
+- **Shared transcript:** every agent appends its messages and tool results to one per-session log. On handoff, the next agent's prompt is `[its system prompt + current TripState] + the full transcript`, so it sees everything prior agents said and did.
+- **Shared TripState:** all agents read/write the same JSON, communicating through state mutations.
+- **Two-way handoffs:** `transfer_to_*` works in both directions (e.g. Logistician → Supervisor → Diplomat), enabling coordination via round-trips. Flow is **sequential** (one agent active at a time), not parallel.
+
+> **Optional upgrade — synchronous peer consultation:** an `ask_agent(target, question)` tool would let an agent query another mid-task and get its answer back as a tool result *without* giving up control. Not needed for current flows (~20 lines to add).
+
+### 5.2 @-Mention Routing (direct addressing)
+
+By default the Supervisor decides who acts. A user can also address an agent directly by `@`-mentioning it — the request then **enters at that agent** instead of the Supervisor (falling back to the Supervisor when no mention is present). Recognized mentions are case-insensitive and aliased:
+
+| Agent | `@` triggers |
+|---|---|
+| Supervisor | `@supervisor`, `@router` |
+| Diplomat | `@diplomat`, `@group`, `@consensus` |
+| Logistician | `@logistician`, `@flights`, `@hotels`, `@booking`, `@logistics` |
+| Sentinel | `@sentinel`, `@weather`, `@monitor` |
+| Reshuffler | `@reshuffler`, `@reshuffle`, `@fixer` |
+
+The `/api/chat` response reports the resolved `entry_agent`, and the `trail` shows the direct route (`user → @logistician (direct)`).
+
 6. Observability & Evaluation Strategy
 
 We utilize Weights & Biases (Weave) to mathematically prove the reliability of our native OpenAI integration:
