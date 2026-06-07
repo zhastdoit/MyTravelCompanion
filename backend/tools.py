@@ -9,7 +9,9 @@ External APIs (Amadeus / Geoapify / OpenWeather) are MOCKED here behind the same
 function names the real wrappers will use, so swapping to live keys is local to this file.
 """
 from __future__ import annotations
+import os
 import uuid
+import datetime
 import urllib.parse
 from state import TripState, CalendarBlock, FlightOption
 
@@ -46,30 +48,92 @@ def update_constraints(state: TripState, *, budget_ceiling_usd: float = 0,
             f"{state.itinerary_manifest.destination or '?'}.")
 
 
-# mock-but-real-shaped flight inventory (swap for live Amadeus later, same output shape)
+# mock-but-real-shaped flight inventory (used when no key / on failure)
 _FLIGHTS_SEED = [
     {"id": "f1", "airline": "ANA",     "price_usd": 612, "stops": 1, "duration": "14h"},
     {"id": "f2", "airline": "United",  "price_usd": 740, "stops": 0, "duration": "11h"},
     {"id": "f3", "airline": "ZipAir",  "price_usd": 560, "stops": 2, "duration": "19h"},
 ]
 
-def query_amadeus(state: TripState, *, origin: str = "", destination: str = "") -> str:
-    """Logistician: (mock) flight search. Writes structured options + a FLIGHT_PICKER form."""
-    o = origin or state.itinerary_manifest.origin or "SFO"
-    d = destination or state.itinerary_manifest.destination or "Tokyo"
+# minimal city/code -> IATA map for the demo (extend as needed)
+_IATA = {
+    "sfo": "SFO", "san francisco": "SFO", "san jose": "SJC", "oakland": "OAK",
+    "tokyo": "NRT", "narita": "NRT", "haneda": "HND", "osaka": "KIX",
+    "new york": "JFK", "nyc": "JFK", "los angeles": "LAX", "la": "LAX",
+    "seattle": "SEA", "chicago": "ORD", "boston": "BOS", "honolulu": "HNL",
+    "london": "LHR", "paris": "CDG", "singapore": "SIN", "hong kong": "HKG",
+    "seoul": "ICN", "taipei": "TPE",
+}
+
+
+def _to_iata(s: str) -> str | None:
+    s = (s or "").strip()
+    if len(s) == 3 and s.isalpha():
+        return s.upper()
+    return _IATA.get(s.lower())
+
+
+def _fmt_dur(mins) -> str:
+    if not mins:
+        return ""
+    h, m = divmod(int(mins), 60)
+    return f"{h}h {m}m" if m else f"{h}h"
+
+
+def _write_flight_form(state: TripState, opts: list, title: str) -> tuple[float, float]:
+    state.itinerary_manifest.flight_options = opts
+    state.copilot_ui_hooks.active_form_component = "FLIGHT_PICKER"
+    state.copilot_ui_hooks.form_payload = {"title": title,
+                                           "options": [o.model_dump() for o in opts]}
+    return ((min(x.price_usd for x in opts), max(x.price_usd for x in opts))
+            if opts else (0.0, 0.0))
+
+
+def _query_amadeus_mock(state: TripState, o: str, d: str) -> str:
     q = urllib.parse.quote(f"flights from {o} to {d}")
     opts = [FlightOption(depart=o, arrive=d,
                          book_url=f"https://www.google.com/travel/flights?q={q}", **f)
             for f in _FLIGHTS_SEED]
-    state.itinerary_manifest.flight_options = opts
-    state.copilot_ui_hooks.active_form_component = "FLIGHT_PICKER"
-    state.copilot_ui_hooks.form_payload = {
-        "title": f"Flights {o} → {d}",
-        "options": [opt.model_dump() for opt in opts],
-    }
-    lo, hi = min(x.price_usd for x in opts), max(x.price_usd for x in opts)
-    return (f"[Amadeus mock] {o}→{d}: {len(opts)} options (${lo:.0f}-${hi:.0f}). "
+    lo, hi = _write_flight_form(state, opts, f"Flights {o} → {d}")
+    return (f"[mock] {o}→{d}: {len(opts)} options (${lo:.0f}-${hi:.0f}). "
             f"FLIGHT_PICKER form ready with booking links.")
+
+
+def query_amadeus(state: TripState, *, origin: str = "", destination: str = "") -> str:
+    """Logistician: flight search via SerpApi (Google Flights); falls back to mock."""
+    o = origin or state.itinerary_manifest.origin or "SFO"
+    d = destination or state.itinerary_manifest.destination or "Tokyo"
+    key = os.getenv("SERPAPI_API_KEY")
+    dep, arr = _to_iata(o), _to_iata(d)
+    if not key or not dep or not arr:
+        return _query_amadeus_mock(state, o, d)
+    try:
+        import httpx
+        out_date = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+        data = httpx.get("https://serpapi.com/search.json", params={
+            "engine": "google_flights", "departure_id": dep, "arrival_id": arr,
+            "outbound_date": out_date, "type": "2",   # one-way (no return_date needed)
+            "currency": "USD", "api_key": key,
+        }, timeout=25).json()
+        flights = (data.get("best_flights") or []) + (data.get("other_flights") or [])
+        if not flights:
+            return _query_amadeus_mock(state, o, d)
+        q = urllib.parse.quote(f"flights from {o} to {d}")
+        book = f"https://www.google.com/travel/flights?q={q}"
+        opts = []
+        for i, f in enumerate(flights[:3], 1):
+            segs = f.get("flights", [])
+            opts.append(FlightOption(
+                id=f"f{i}", airline=(segs[0].get("airline", "") if segs else ""),
+                price_usd=float(f.get("price") or 0), stops=max(0, len(segs) - 1),
+                duration=_fmt_dur(f.get("total_duration")),
+                depart=dep, arrive=arr, book_url=book))
+        lo, hi = _write_flight_form(state, opts, f"Flights {dep} → {arr}")
+        return (f"[SerpApi/Google Flights] {dep}→{arr}: {len(opts)} live options "
+                f"(${lo:.0f}-${hi:.0f}). FLIGHT_PICKER form ready.")
+    except Exception as e:
+        print(f"[query_amadeus] SerpApi failed ({e}); using mock.")
+        return _query_amadeus_mock(state, o, d)
 
 
 _POI_SEED = [
