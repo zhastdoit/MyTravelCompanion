@@ -294,13 +294,84 @@ _GEOAPIFY_FIXTURE_BY_CITY = {
         ("MAAT Museum",           "INDOOR",  [38.6951, -9.1939], "art"),
         ("Belem Tower",           "OUTDOOR", [38.6916, -9.2160], "historic"),
     ],
+    "seattle": [
+        ("Pike Place Market",      "OUTDOOR", [47.6097, -122.3422], "food"),
+        ("Seattle Art Museum",     "INDOOR",  [47.6076, -122.3381], "art"),
+        ("Pioneer Square",         "OUTDOOR", [47.6015, -122.3343], "historic"),
+    ],
+    "san francisco": [
+        ("Ferry Building Marketplace", "OUTDOOR", [37.7955, -122.3937], "food"),
+        ("SFMOMA",                     "INDOOR",  [37.7857, -122.4011], "art"),
+        ("Golden Gate Bridge",         "OUTDOOR", [37.8199, -122.4783], "historic"),
+    ],
+    "los angeles": [
+        ("Grand Central Market",   "OUTDOOR", [34.0506, -118.2487], "food"),
+        ("The Getty",              "INDOOR",  [34.0780, -118.4741], "art"),
+        ("Hollywood Walk of Fame", "OUTDOOR", [34.1016, -118.3267], "historic"),
+    ],
+    "chicago": [
+        ("Chicago French Market",     "OUTDOOR", [41.8847, -87.6398], "food"),
+        ("Art Institute of Chicago",  "INDOOR",  [41.8796, -87.6237], "art"),
+        ("Millennium Park",           "OUTDOOR", [41.8826, -87.6226], "historic"),
+    ],
+    "rome": [
+        ("Campo de' Fiori Market", "OUTDOOR", [41.8955, 12.4722], "food"),
+        ("Vatican Museums",        "INDOOR",  [41.9065, 12.4536], "art"),
+        ("Colosseum",              "OUTDOOR", [41.8902, 12.4922], "historic"),
+    ],
+    "barcelona": [
+        ("La Boqueria Market", "OUTDOOR", [41.3817, 2.1716], "food"),
+        ("Picasso Museum",     "INDOOR",  [41.3852, 2.1810], "art"),
+        ("Sagrada Família",    "OUTDOOR", [41.4036, 2.1744], "historic"),
+    ],
+}
+
+# City-center coordinates used to place generic, destination-named blocks when a
+# city has no curated fixture and no Geoapify key is configured. Keeps the map
+# centered on the right city instead of defaulting to the wrong place.
+_CITY_CENTER = {
+    "tokyo": (35.6762, 139.6503), "paris": (48.8566, 2.3522),
+    "london": (51.5074, -0.1278), "new york": (40.7128, -74.0060),
+    "lisbon": (38.7223, -9.1393), "seattle": (47.6062, -122.3321),
+    "san francisco": (37.7749, -122.4194), "los angeles": (34.0522, -118.2437),
+    "chicago": (41.8781, -87.6298), "boston": (42.3601, -71.0589),
+    "washington": (38.9072, -77.0369), "miami": (25.7617, -80.1918),
+    "austin": (30.2672, -97.7431), "denver": (39.7392, -104.9903),
+    "toronto": (43.6532, -79.3832), "vancouver": (49.2827, -123.1207),
+    "rome": (41.9028, 12.4964), "barcelona": (41.3874, 2.1686),
+    "madrid": (40.4168, -3.7038), "amsterdam": (52.3676, 4.9041),
+    "berlin": (52.5200, 13.4050), "vienna": (48.2082, 16.3738),
+    "sydney": (-33.8688, 151.2093), "bangkok": (13.7563, 100.5018),
+    "singapore": (1.3521, 103.8198), "dubai": (25.2048, 55.2708),
+    "istanbul": (41.0082, 28.9784), "mexico city": (19.4326, -99.1332),
+    "honolulu": (21.3069, -157.8583),
 }
 
 
+def _generic_blocks(
+    destination: str, center: tuple[float, float]
+) -> list[tuple[str, str, list[float], str]]:
+    """Destination-named placeholder attractions around a city center, used when
+    we have no curated fixture and no live API key — never the wrong city."""
+    lat, lon = center
+    return [
+        (f"{destination} Public Market", "OUTDOOR", [lat, lon + 0.006], "food"),
+        (f"{destination} Art Museum",    "INDOOR",  [lat + 0.005, lon], "art"),
+        (f"{destination} Old Town",      "OUTDOOR", [lat - 0.005, lon - 0.005], "historic"),
+    ]
+
+
 def _geoapify_fixture_blocks(destination: str) -> list[tuple[str, str, list[float], str]]:
-    return _GEOAPIFY_FIXTURE_BY_CITY.get(
-        destination.strip().lower(),
-        _GEOAPIFY_FIXTURE_BY_CITY["tokyo"])
+    key = destination.strip().lower()
+    if key in _GEOAPIFY_FIXTURE_BY_CITY:
+        return _GEOAPIFY_FIXTURE_BY_CITY[key]
+    center = _CITY_CENTER.get(key)
+    if center:
+        return _generic_blocks(destination, center)
+    # Unknown city with no key: still name the blocks after the real destination
+    # (placed at a neutral center) rather than silently showing Tokyo.
+    log.warning("[geoapify] no fixture/center for %r; using generic blocks", destination)
+    return _generic_blocks(destination, (0.0, 0.0))
 
 
 def _geocode(destination: str) -> tuple[float, float] | None:
