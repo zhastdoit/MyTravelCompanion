@@ -77,30 +77,37 @@ export const AgentAssistantMessage = (props: AssistantMessageProps) => {
       : props;
 
   return (
-    <div className="copilotKitAssistantMessage relative pl-3">
-      <span
-        className="absolute inset-y-1 left-0 w-0.5 rounded-sm"
-        style={{ backgroundColor: agent.accent }}
-        aria-hidden
-      />
-      <div className="group/hovercard relative mb-1 flex w-fit items-center gap-1.5">
-        <AgentAvatar agentId={agent.id} size={20} />
-        <span
-          className="text-[11px] font-semibold uppercase tracking-wider"
-          style={{ color: agent.accent }}
-        >
-          {agent.label}
-        </span>
-        <span className="text-[10px] text-[color:var(--color-muted)]">
-          · {agent.tagline}
-        </span>
+    <div className="mtcMsgRow flex gap-2 px-1 py-1">
+      <div className="mt-auto shrink-0">
+        <AgentAvatar agentId={agent.id} size={26} />
+      </div>
+      <div className="flex min-w-0 max-w-[88%] flex-col items-start">
+        <div className="group/hovercard relative mb-0.5 ml-1 flex items-center gap-1.5">
+          <span
+            className="text-[11px] font-semibold uppercase tracking-wider"
+            style={{ color: agent.accent }}
+          >
+            {agent.label}
+          </span>
+          <span className="text-[10px] text-[color:var(--color-muted)]">
+            · {agent.tagline}
+          </span>
 
-        {/* Hover intro — detailed agent card */}
-        <div className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 origin-top scale-95 opacity-0 transition-all duration-150 group-hover/hovercard:scale-100 group-hover/hovercard:opacity-100">
-          <AgentIntroCard agentId={agent.id} />
+          {/* Hover intro — detailed agent card */}
+          <div className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 origin-top scale-95 opacity-0 transition-all duration-150 group-hover/hovercard:scale-100 group-hover/hovercard:opacity-100">
+            <AgentIntroCard agentId={agent.id} />
+          </div>
+        </div>
+
+        <div
+          className="mtcBubble w-full rounded-2xl rounded-bl-md border bg-surface px-3 py-1.5 text-sm shadow-sm"
+          style={{
+            borderColor: `color-mix(in srgb, ${agent.accent} 28%, var(--color-border))`,
+          }}
+        >
+          <DefaultAssistantMessage {...bodyProps} />
         </div>
       </div>
-      <DefaultAssistantMessage {...bodyProps} />
     </div>
   );
 };

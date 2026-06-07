@@ -74,3 +74,36 @@ body {
   min-height: 0;
   background: transparent;
 }
+
+/* ---- WhatsApp-style chat bubbles ---------------------------------------- */
+
+/* Subtle thread background so bubbles read as cards. */
+.copilotKitMessages {
+  background:
+    radial-gradient(circle at 18% 8%, color-mix(in srgb, var(--color-primary) 5%, transparent) 0, transparent 42%),
+    var(--color-muted-surface, #f7f8fa);
+}
+
+/* Our AgentAssistantMessage wraps the default message in .mtcBubble. Strip the
+ * default chrome so the markdown sits flush inside the bubble. */
+.mtcBubble .copilotKitMessage.copilotKitAssistantMessage {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  max-width: 100%;
+}
+.mtcBubble .copilotKitMessage.copilotKitAssistantMessage p:last-child {
+  margin-bottom: 0;
+}
+
+/* Message action buttons (copy/regenerate): inline + subtle, revealed on hover. */
+.mtcBubble .copilotKitMessageControls {
+  position: static;
+  opacity: 0;
+  gap: 0.5rem;
+  margin-top: 4px;
+  transition: opacity 0.15s ease;
+}
+.mtcMsgRow:hover .copilotKitMessageControls {
+  opacity: 0.55;
+}

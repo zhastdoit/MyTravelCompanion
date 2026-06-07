@@ -194,7 +194,10 @@ export class FastApiAgent extends AbstractAgent {
             subscriber.next({
               type: EventType.TEXT_MESSAGE_CONTENT,
               messageId: parentMessageId,
-              delta: "Here's the group's plan — confirm or tweak it below 👇",
+              // Prefix with the Diplomat so the chat renders it as her bubble
+              // (avatar + name); AgentAssistantMessage strips the prefix.
+              delta:
+                "**🤝 Mingle Max** — Here's the group's plan — confirm or tweak it below 👇",
             });
             subscriber.next({
               type: EventType.TEXT_MESSAGE_END,

@@ -10,6 +10,7 @@ import {
   useAgentSpeaker,
 } from "./chat/agent-speaker-context";
 import { AgentAssistantMessage } from "./chat/agent-assistant-message";
+import { ChatUserMessage } from "./chat/user-message";
 import {
   ACTIVE_FORM_COMPONENT,
   type FlightOption,
@@ -339,6 +340,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                 "Hey! I'm your travel crew. Ask: 'Plan a relaxed 3-day trip from JFK to Paris under $1500.'",
             }}
             AssistantMessage={AgentAssistantMessage}
+            UserMessage={ChatUserMessage}
           />
 
           {/* Flight picker — also pops up inside the agent dialog. The user can
