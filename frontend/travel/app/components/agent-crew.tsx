@@ -3,6 +3,7 @@
 import { AGENT_ID_LIST, AGENTS, type AgentDefinition, type AgentStatusMap } from "@/lib/agents";
 import { AGENT_STATUSES, type AgentStatus } from "@/types/agent";
 import { cn } from "@/lib/utils";
+import { AgentAvatar } from "./agent-avatar";
 
 interface AgentCrewProps {
   status: AgentStatusMap;
@@ -37,7 +38,6 @@ interface AgentChipProps {
 }
 
 const AgentChip = ({ agent, status }: AgentChipProps) => {
-  const Icon = agent.icon;
   const isLive =
     status === AGENT_STATUSES.ACTIVE || status === AGENT_STATUSES.THINKING;
 
@@ -52,12 +52,7 @@ const AgentChip = ({ agent, status }: AgentChipProps) => {
       style={{ color: isLive ? agent.accent : undefined }}
       title={`${agent.label}: ${STATUS_LABEL[status]}`}
     >
-      <span
-        className="grid size-6 place-items-center rounded-sm"
-        style={{ backgroundColor: `${agent.accent}1a`, color: agent.accent }}
-      >
-        <Icon className="size-3.5" aria-hidden />
-      </span>
+      <AgentAvatar agentId={agent.id} size={24} />
       <div className="flex min-w-0 flex-col leading-tight">
         <span className="truncate text-xs font-semibold text-foreground">
           {agent.label}

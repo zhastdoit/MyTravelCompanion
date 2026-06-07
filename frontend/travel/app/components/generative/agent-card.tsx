@@ -1,5 +1,6 @@
 import { AGENTS, type AgentId } from "@/lib/agents";
 import { cn } from "@/lib/utils";
+import { AgentAvatar } from "../agent-avatar";
 
 interface AgentCardProps {
   agentId: AgentId;
@@ -20,7 +21,6 @@ export const AgentCard = ({
   footer,
 }: AgentCardProps) => {
   const agent = AGENTS[agentId];
-  const Icon = agent.icon;
 
   return (
     <div
@@ -37,12 +37,7 @@ export const AgentCard = ({
           backgroundColor: `${agent.accent}0d`,
         }}
       >
-        <span
-          className="grid size-5 place-items-center rounded-sm"
-          style={{ backgroundColor: agent.accent, color: "#fff" }}
-        >
-          <Icon className="size-3" aria-hidden />
-        </span>
+        <AgentAvatar agentId={agent.id} size={20} />
         <span
           className="text-[11px] font-semibold uppercase tracking-wider"
           style={{ color: agent.accent }}
