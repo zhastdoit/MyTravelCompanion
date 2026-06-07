@@ -22,6 +22,24 @@ USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "1") == "1"
 MAX_STEPS = 12
 _transcripts: dict[str, list[dict]] = {}
 
+# A user can directly address an agent with @name (case-insensitive). Aliases included.
+_MENTION_ALIASES = {
+    "supervisor": "supervisor", "router": "supervisor",
+    "diplomat": "diplomat", "group": "diplomat", "consensus": "diplomat",
+    "logistician": "logistician", "logistics": "logistician", "logi": "logistician",
+    "flights": "logistician", "flight": "logistician", "hotels": "logistician", "booking": "logistician",
+    "sentinel": "sentinel", "weather": "sentinel", "monitor": "sentinel",
+    "reshuffler": "reshuffler", "reshuffle": "reshuffler", "fixer": "reshuffler",
+}
+
+
+def detect_mention(text: str) -> str | None:
+    """Return the agent name the user @-addressed, if any."""
+    for m in re.findall(r"@(\w+)", text.lower()):
+        if m in _MENTION_ALIASES:
+            return _MENTION_ALIASES[m]
+    return None
+
 
 @dataclass
 class Decision:
@@ -153,7 +171,11 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict
     transcript = _transcripts.setdefault(session_id, [])
     transcript.append({"role": "user", "content": user_message})
 
-    active, executed, trail = ENTRY_AGENT, set(), []
+    # @-mention routes straight to that agent; otherwise the Supervisor decides.
+    entry = detect_mention(user_message) or ENTRY_AGENT
+    active, executed, trail = entry, set(), []
+    if entry != ENTRY_AGENT:
+        trail.append({"agent": "user", "action": f"@{entry} (direct)"})
     reply, final_agent = "", active
 
     for _ in range(MAX_STEPS):
@@ -196,6 +218,7 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict
         "state": state.model_dump(),
         "store_backend": BACKEND,
         "llm_mode": "mock" if USE_MOCK_LLM else "openai",
+        "entry_agent": entry,
         "usd_spent": cost.spent(session_id),
         "usd_cap": cost.CAP,
     }
