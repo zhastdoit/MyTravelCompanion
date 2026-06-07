@@ -1,0 +1,40 @@
+# Fly.io app config — `fly launch` once, then `fly deploy` for every push.
+# Tweak `app` to a unique name when forking, otherwise `fly launch` will
+# bounce on the global namespace check.
+
+app = "synctrip-backend"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  # Real product defaults — flip via `fly secrets set` if you need overrides.
+  USE_MOCK_LLM = "0"
+  MOCK_EXTERNAL_APIS = "0"
+  SYNCTRIP_ENV = "prod"
+  # ALLOWED_ORIGIN must include your Vercel production URL. Override in
+  # `fly secrets` or here directly:
+  # ALLOWED_ORIGIN = "https://synctrip.vercel.app,http://localhost:3000"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"     # save credit between sessions
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+  cpu_kind = "shared"

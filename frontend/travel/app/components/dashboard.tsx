@@ -22,7 +22,9 @@ import { MOCK_TRIP } from "@/lib/mock-trip";
 import { usePersistedTrip } from "@/lib/use-persisted-trip";
 import { toFrontendTripState } from "@/lib/trip-bridge";
 import { useTripBackendState } from "@/lib/use-trip-backend-state";
+import { useTripTelemetry } from "@/lib/use-trip-telemetry";
 import { Header } from "./header";
+import { TelemetryStrip } from "./telemetry-strip";
 import { AgentCrew } from "./agent-crew";
 import { TripMap } from "./trip-map";
 import { ItineraryTimeline } from "./itinerary-timeline";
@@ -32,16 +34,34 @@ import { NotificationToaster } from "./notification-toaster";
 import { OnboardingCard } from "./onboarding-card";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { FlightCheckoutCard } from "./generative/flight-checkout-card";
-import { GroupAgreementForm } from "./generative/group-agreement-form";
+import {
+  GroupAgreementForm,
+  type GroupAgreementResult,
+} from "./generative/group-agreement-form";
+import type { FlightCheckoutResult } from "./generative/flight-checkout-card";
+import {
+  encodeFlightCheckoutMessage,
+  encodeGroupAgreementMessage,
+} from "@/lib/form-message";
+import { AuthMenu } from "./auth-menu";
+import { SaveTripButton } from "./save-trip-button";
 
 interface DashboardProps {
   /** Stable session id, mirrored as the FastAPI `session_id` and CopilotKit `threadId`. */
   sessionId?: string;
+  /** Authenticated user's Supabase id, when signed in. */
+  userAuthId?: string;
+  /** Resolved group members (currently the signed-in user only). Server-rendered. */
+  groupMembers?: TripState["group_members"];
 }
 
-export const Dashboard = ({ sessionId }: DashboardProps = {}) => (
+export const Dashboard = ({ sessionId, userAuthId, groupMembers }: DashboardProps = {}) => (
   <AgentSpeakerProvider>
-    <DashboardContent sessionId={sessionId} />
+    <DashboardContent
+      sessionId={sessionId}
+      userAuthId={userAuthId}
+      groupMembers={groupMembers}
+    />
   </AgentSpeakerProvider>
 );
 
@@ -50,9 +70,12 @@ const FORM_COMPONENT_TO_AGENT: Partial<Record<TripState["copilot_ui_hooks"]["act
   [ACTIVE_FORM_COMPONENT.FLIGHT_PICKER]: AGENT_IDS.LOGISTICIAN,
 };
 
-const DashboardContent = ({ sessionId }: DashboardProps) => {
+const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProps) => {
   const persistKey = sessionId ?? "demo";
-  const [tripState, setTripState] = usePersistedTrip(persistKey);
+  const [tripState, setTripState] = usePersistedTrip(persistKey, {
+    userAuthId,
+    groupMembers,
+  });
   const { appendMessage } = useCopilotChat();
   const { setCurrentAgent } = useAgentSpeaker();
 
@@ -67,6 +90,8 @@ const DashboardContent = ({ sessionId }: DashboardProps) => {
     sessionId,
     onState: handleBackendState,
   });
+
+  const { telemetry } = useTripTelemetry({ sessionId });
 
   const activeForm = tripState.copilot_ui_hooks.active_form_component;
   const inferredAgent = FORM_COMPONENT_TO_AGENT[activeForm] ?? null;
@@ -89,6 +114,29 @@ const DashboardContent = ({ sessionId }: DashboardProps) => {
     }));
   }, [setTripState]);
 
+  const sendUserMessage = useCallback(
+    (content: string) => {
+      void appendMessage(new TextMessage({ role: Role.User, content }));
+    },
+    [appendMessage],
+  );
+
+  const handleGroupAgreement = useCallback(
+    (result: GroupAgreementResult) => {
+      sendUserMessage(encodeGroupAgreementMessage(result));
+      dismissActiveForm();
+    },
+    [sendUserMessage, dismissActiveForm],
+  );
+
+  const handleFlightCheckout = useCallback(
+    (result: FlightCheckoutResult) => {
+      sendUserMessage(encodeFlightCheckoutMessage(result));
+      dismissActiveForm();
+    },
+    [sendUserMessage, dismissActiveForm],
+  );
+
   const { itinerary_manifest, group_profile, group_members } = tripState;
   const shareDialogRef = useRef<ShareDialogHandle | null>(null);
   const openShare = useCallback(() => {
@@ -109,17 +157,29 @@ const DashboardContent = ({ sessionId }: DashboardProps) => {
         groupProfile={group_profile}
         rightSlot={
           <>
+            <TelemetryStrip telemetry={telemetry} />
             <MembersStrip members={group_members} />
             {sessionId ? (
-              <button
-                type="button"
-                onClick={openShare}
-                className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 py-1 text-xs font-semibold transition hover:border-primary/60 hover:text-primary"
-              >
-                <Share2 className="size-3.5" aria-hidden />
-                Share
-              </button>
+              <>
+                <SaveTripButton
+                  sessionId={sessionId}
+                  defaultName={
+                    itinerary_manifest.origin && itinerary_manifest.destination
+                      ? `${itinerary_manifest.origin} → ${itinerary_manifest.destination}`
+                      : undefined
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={openShare}
+                  className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 py-1 text-xs font-semibold transition hover:border-primary/60 hover:text-primary"
+                >
+                  <Share2 className="size-3.5" aria-hidden />
+                  Share
+                </button>
+              </>
             ) : null}
+            <AuthMenu />
           </>
         }
       />
@@ -149,7 +209,7 @@ const DashboardContent = ({ sessionId }: DashboardProps) => {
                   proposedAvoidTags={group_profile.compiled_constraints.avoid_tags}
                   rationale="Diplomat compiled these constraints from the group's last exchange. Approve to lock them in."
                   status="executing"
-                  onRespond={dismissActiveForm}
+                  onRespond={handleGroupAgreement}
                 />
               ) : null}
 
@@ -164,6 +224,7 @@ const DashboardContent = ({ sessionId }: DashboardProps) => {
                   durationMinutes={flightStub.durationMinutes}
                   priceUsd={flightStub.priceUsd}
                   status="complete"
+                  onConfirm={handleFlightCheckout}
                 />
               ) : null}
 

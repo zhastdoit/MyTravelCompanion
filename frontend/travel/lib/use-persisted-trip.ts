@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { MOCK_TRIP } from "./mock-trip";
-import type { TripState } from "@/types/trip";
+import type { GroupMember, TripState } from "@/types/trip";
 
 const STORAGE_PREFIX = "synctrip:";
 const STORAGE_VERSION = 1;
@@ -38,10 +38,31 @@ const writeToStorage = (sessionId: string, state: TripState): void => {
   }
 };
 
-const seedForSession = (sessionId: string): TripState => ({
-  ...MOCK_TRIP,
-  session_id: sessionId,
-});
+interface SeedOverrides {
+  userAuthId?: string;
+  groupMembers?: GroupMember[];
+}
+
+const seedForSession = (
+  sessionId: string,
+  overrides: SeedOverrides = {},
+): TripState => {
+  const base: TripState = {
+    ...MOCK_TRIP,
+    session_id: sessionId,
+    itinerary_manifest: {
+      ...MOCK_TRIP.itinerary_manifest,
+      origin: "",
+      destination: "",
+      calendar_blocks: [],
+    },
+  };
+  if (overrides.userAuthId) base.user_auth_id = overrides.userAuthId;
+  if (overrides.groupMembers && overrides.groupMembers.length > 0) {
+    base.group_members = overrides.groupMembers;
+  }
+  return base;
+};
 
 interface TripStore {
   getSnapshot: () => TripState;
@@ -53,14 +74,25 @@ interface TripStore {
 
 const stores = new Map<string, TripStore>();
 
-const createStore = (sessionId: string): TripStore => {
+const createStore = (sessionId: string, overrides: SeedOverrides): TripStore => {
   let state: TripState =
     (typeof window !== "undefined" && loadFromStorage(sessionId)) ||
-    seedForSession(sessionId);
-  state = { ...state, session_id: sessionId };
+    seedForSession(sessionId, overrides);
+  // Always reconcile session_id + signed-in user / group members into the
+  // restored snapshot — they're authoritative and may have changed since
+  // the localStorage write.
+  state = {
+    ...state,
+    session_id: sessionId,
+    user_auth_id: overrides.userAuthId ?? state.user_auth_id,
+    group_members:
+      overrides.groupMembers && overrides.groupMembers.length > 0
+        ? overrides.groupMembers
+        : state.group_members,
+  };
   const listeners = new Set<() => void>();
   let writeTimer: ReturnType<typeof setTimeout> | null = null;
-  const serverSnapshot = seedForSession(sessionId);
+  const serverSnapshot = seedForSession(sessionId, overrides);
 
   const scheduleWrite = (): void => {
     if (writeTimer) clearTimeout(writeTimer);
@@ -103,10 +135,10 @@ const createStore = (sessionId: string): TripStore => {
   };
 };
 
-const getStore = (sessionId: string): TripStore => {
+const getStore = (sessionId: string, overrides: SeedOverrides): TripStore => {
   let store = stores.get(sessionId);
   if (!store) {
-    store = createStore(sessionId);
+    store = createStore(sessionId, overrides);
     stores.set(sessionId, store);
   }
   return store;
@@ -116,11 +148,19 @@ const getStore = (sessionId: string): TripStore => {
  * Persisted, sessionId-keyed trip state backed by `localStorage`. Reads are
  * served via `useSyncExternalStore`, which cleanly handles SSR hydration via
  * the `getServerSnapshot` arg. Writes are debounced to avoid thrashing.
+ *
+ * The `overrides` arg is read once per session — it seeds the user identity
+ * and group members from the server. Subsequent calls re-use the cached store.
  */
 export const usePersistedTrip = (
   sessionId: string,
+  overrides: SeedOverrides = {},
 ): [TripState, React.Dispatch<React.SetStateAction<TripState>>] => {
-  const store = useMemo(() => getStore(sessionId), [sessionId]);
+  const store = useMemo(
+    () => getStore(sessionId, overrides),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId],
+  );
   const state = useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,

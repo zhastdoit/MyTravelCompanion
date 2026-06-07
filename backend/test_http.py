@@ -10,12 +10,25 @@ import uuid
 
 # Force deterministic mock mode before importing the app, so this test file
 # can run from a clean shell with no .env present.
-os.environ.setdefault("USE_MOCK_LLM", "1")
+os.environ["USE_MOCK_LLM"] = "1"
 
 import pytest
 from fastapi.testclient import TestClient
 
 from main import app
+
+
+@pytest.fixture(autouse=True)
+def _disable_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force anonymous mode regardless of what the dev's `.env` configures.
+
+    `main` calls `load_dotenv()` at import time, which can repopulate
+    `SUPABASE_*` from a real project. The chat / state / reset endpoints all
+    depend on `require_user`, so we strip the auth env here to keep these
+    tests focused on the orchestrator wiring.
+    """
+    monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
 
 CANONICAL_PROMPT = (
     "Plan a relaxed trip from SFO to Tokyo for 3 days, $1500 budget, "

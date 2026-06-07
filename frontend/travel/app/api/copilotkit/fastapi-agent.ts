@@ -3,7 +3,7 @@ import { Observable } from "rxjs";
 import { AbstractAgent } from "@ag-ui/client";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventType } from "@ag-ui/core";
-import type { BackendChatResponse } from "@/lib/trip-bridge";
+import type { BackendChatLine, BackendChatResponse } from "@/lib/trip-bridge";
 
 interface FastApiAgentOptions {
   /** Base URL of the FastAPI agent server (e.g. `http://localhost:8000`). */
@@ -12,6 +12,8 @@ interface FastApiAgentOptions {
   fetchImpl?: typeof fetch;
   /** Stable agent id used by `/info` and the React provider. */
   agentId?: string;
+  /** Supabase access token to forward as `Authorization: Bearer ...`. */
+  accessToken?: string | null;
 }
 
 const CHAT_PATH = "/api/chat";
@@ -20,11 +22,26 @@ const DEFAULT_AGENT_ID = "default";
 const trimTrailingSlash = (url: string): string =>
   url.endsWith("/") ? url.slice(0, -1) : url;
 
-/** Shape of the assistant message produced by the FastAPI bridge. */
+/** Shape of the assistant message(s) produced by the FastAPI bridge.
+ *
+ * `lines` is the per-agent breakdown when the backend supplies a `chat[]`
+ * array; on error or older responses it collapses to a single line carrying
+ * the legacy `reply` string.
+ */
 interface ReplyResult {
-  text: string;
+  lines: BackendChatLine[];
   isError: boolean;
 }
+
+/** Format a per-agent chat line as a markdown bubble for the chat UI. */
+const formatChatLine = (line: BackendChatLine): string =>
+  `**${line.emoji} ${line.name}** — ${line.text}`;
+
+/** Build a one-line `ReplyResult` from a fallback string (errors / legacy responses). */
+const singleLineResult = (text: string, isError: boolean): ReplyResult => ({
+  lines: [{ agent: "system", emoji: "", name: "", text }],
+  isError,
+});
 
 /**
  * AGUI agent that bridges CopilotKit's chat protocol to the FastAPI agent
@@ -44,6 +61,7 @@ export class FastApiAgent extends AbstractAgent {
   private readonly backendUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly options: FastApiAgentOptions;
+  private readonly accessToken: string | null;
 
   constructor(options: FastApiAgentOptions) {
     super({
@@ -53,6 +71,7 @@ export class FastApiAgent extends AbstractAgent {
     this.options = options;
     this.backendUrl = trimTrailingSlash(options.backendUrl);
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.accessToken = options.accessToken ?? null;
   }
 
   /**
@@ -69,7 +88,6 @@ export class FastApiAgent extends AbstractAgent {
     return new Observable<BaseEvent>((subscriber) => {
       const sessionId = input.threadId;
       const userMessage = pickLatestUserText(input.messages);
-      const messageId = randomUUID();
 
       const cancelled = { current: false };
 
@@ -81,32 +99,40 @@ export class FastApiAgent extends AbstractAgent {
             runId: input.runId,
           });
 
-          const { text, isError } = await this.requestReply(
+          const { lines, isError } = await this.requestReply(
             sessionId,
             userMessage,
           );
 
           if (cancelled.current) return;
 
-          subscriber.next({
-            type: EventType.TEXT_MESSAGE_START,
-            messageId,
-            role: "assistant",
-          });
-          subscriber.next({
-            type: EventType.TEXT_MESSAGE_CONTENT,
-            messageId,
-            delta: text,
-          });
-          subscriber.next({
-            type: EventType.TEXT_MESSAGE_END,
-            messageId,
-          });
+          // Fan the per-agent chat lines out into separate assistant
+          // messages so the chat UI can render the crew talking. Each line
+          // gets its own messageId triplet (START / CONTENT / END) per the
+          // AGUI protocol.
+          for (const line of lines) {
+            const messageId = randomUUID();
+            const delta = line.emoji ? formatChatLine(line) : line.text;
+            subscriber.next({
+              type: EventType.TEXT_MESSAGE_START,
+              messageId,
+              role: "assistant",
+            });
+            subscriber.next({
+              type: EventType.TEXT_MESSAGE_CONTENT,
+              messageId,
+              delta,
+            });
+            subscriber.next({
+              type: EventType.TEXT_MESSAGE_END,
+              messageId,
+            });
+          }
 
           if (isError) {
             subscriber.next({
               type: EventType.RUN_ERROR,
-              message: text,
+              message: lines[lines.length - 1]?.text ?? "agent error",
             });
           } else {
             subscriber.next({
@@ -132,26 +158,32 @@ export class FastApiAgent extends AbstractAgent {
     message: string,
   ): Promise<ReplyResult> {
     let res: Response;
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (this.accessToken) {
+      headers.authorization = `Bearer ${this.accessToken}`;
+    }
     try {
       res = await this.fetchImpl(`${this.backendUrl}${CHAT_PATH}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ session_id: sessionId, message }),
       });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      return {
-        text: `Backend unreachable at ${this.backendUrl}: ${detail}`,
-        isError: true,
-      };
+      return singleLineResult(
+        `Backend unreachable at ${this.backendUrl}: ${detail}`,
+        true,
+      );
     }
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      return {
-        text: `Backend error ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
-        isError: true,
-      };
+      return singleLineResult(
+        `Backend error ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+        true,
+      );
     }
 
     let data: BackendChatResponse;
@@ -159,10 +191,17 @@ export class FastApiAgent extends AbstractAgent {
       data = (await res.json()) as BackendChatResponse;
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      return { text: `Malformed backend response: ${detail}`, isError: true };
+      return singleLineResult(`Malformed backend response: ${detail}`, true);
     }
 
-    return { text: data.reply ?? "", isError: false };
+    // Prefer the structured `chat[]` payload so each agent gets its own
+    // bubble; fall back to the legacy single-line `reply` for older
+    // backends or if the orchestrator returned no chat events.
+    const lines = (data.chat ?? []).filter((l) => l.text?.trim().length > 0);
+    if (lines.length > 0) {
+      return { lines, isError: false };
+    }
+    return singleLineResult(data.reply ?? "", false);
   }
 }
 

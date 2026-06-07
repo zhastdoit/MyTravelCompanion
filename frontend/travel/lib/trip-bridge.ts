@@ -66,12 +66,27 @@ export interface BackendTrailEntry {
   result?: string;
 }
 
+/**
+ * One per-agent line in `run_turn()`'s `chat` array. The orchestrator emits
+ * these as the crew runs (handoffs + tool effects + replies) so the chat UI
+ * can render the conversation as separate "voices" instead of a single
+ * monolithic reply.
+ */
+export interface BackendChatLine {
+  agent: string;     // canonical agent id ("supervisor", "diplomat", ...)
+  emoji: string;     // pre-picked badge for the bubble (no fallback needed)
+  name: string;      // display name ("Supervisor", "Diplomat", ...)
+  text: string;      // already cleaned of "[tool] " prefixes
+}
+
 /** Shape of `POST /api/chat`'s response body. */
 export interface BackendChatResponse {
   session_id: string;
   reply: string;
   active_agent: string;
   trail: BackendTrailEntry[];
+  /** Per-agent transcript of the turn — see {@link BackendChatLine}. */
+  chat?: BackendChatLine[];
   state: BackendTripState;
   store_backend: string;
   llm_mode: string;

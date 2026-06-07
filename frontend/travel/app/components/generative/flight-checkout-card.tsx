@@ -5,6 +5,14 @@ import { Plane } from "lucide-react";
 import { AGENT_IDS } from "@/lib/agents";
 import { AgentCard } from "./agent-card";
 
+export interface FlightCheckoutResult {
+  airline: string;
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  priceUsd: number;
+}
+
 export interface FlightCheckoutCardProps {
   airline: string;
   flightNumber: string;
@@ -15,6 +23,8 @@ export interface FlightCheckoutCardProps {
   durationMinutes?: number;
   priceUsd: number;
   status: "inProgress" | "executing" | "complete";
+  /** Called once when the user confirms the booking, before local state flips. */
+  onConfirm?: (result: FlightCheckoutResult) => void;
 }
 
 const formatPrice = (usd: number): string =>
@@ -52,9 +62,16 @@ export const FlightCheckoutCard = ({
   durationMinutes,
   priceUsd,
   status,
+  onConfirm,
 }: FlightCheckoutCardProps) => {
   const [booked, setBooked] = useState(false);
   const isComplete = status === "complete";
+
+  const handleConfirm = () => {
+    if (booked) return;
+    setBooked(true);
+    onConfirm?.({ airline, flightNumber, origin, destination, priceUsd });
+  };
 
   return (
     <AgentCard
@@ -68,7 +85,7 @@ export const FlightCheckoutCard = ({
           </span>
           <button
             type="button"
-            onClick={() => setBooked(true)}
+            onClick={handleConfirm}
             disabled={booked || !isComplete}
             className="ml-auto inline-flex items-center gap-1.5 rounded-sm bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
           >

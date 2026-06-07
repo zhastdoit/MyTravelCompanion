@@ -1,4 +1,4 @@
-import { getBackendUrl, proxyError } from "../../_lib/backend";
+import { buildProxyHeaders, getBackendUrl, proxyError } from "../../_lib/backend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export const POST = async (
   try {
     upstream = await fetch(
       `${backendUrl}/api/reset/${encodeURIComponent(sessionId)}`,
-      { method: "POST" },
+      { method: "POST", headers: await buildProxyHeaders() },
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

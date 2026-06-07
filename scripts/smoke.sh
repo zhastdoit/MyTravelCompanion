@@ -89,4 +89,8 @@ echo "[smoke] GET /api/trip/{sid}/state via gateway, expect populated destinatio
 curl -sf "http://localhost:3000/api/trip/$SID/state" \
   | jq -e '.itinerary_manifest.destination | length > 0' >/dev/null
 
+echo "[smoke] GET /api/trip/{sid}/telemetry via gateway, expect llm_mode + cost fields..."
+curl -sf "http://localhost:3000/api/trip/$SID/telemetry" \
+  | jq -e '.llm_mode == "mock" and (.usd_cap | type == "number") and (.tokens.calls | type == "number")' >/dev/null
+
 echo "[smoke] OK"

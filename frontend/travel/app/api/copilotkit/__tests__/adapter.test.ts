@@ -97,7 +97,7 @@ describe("FastApiAgent.run", () => {
     vi.restoreAllMocks();
   });
 
-  it("POSTs the latest user message to /api/chat with the threadId and emits the reply", async () => {
+  it("POSTs the latest user message and falls back to the legacy reply when chat[] is absent", async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(
         JSON.stringify(makeBackendResponse("hello from agents")),
@@ -139,6 +139,61 @@ describe("FastApiAgent.run", () => {
     expect(contentEvent?.delta).toBe("hello from agents");
   });
 
+  it("fans chat[] entries out into one assistant message per agent", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify(
+          makeBackendResponse("ignored when chat[] is present", {
+            chat: [
+              { agent: "supervisor", emoji: "🧭", name: "Supervisor",
+                text: "Bringing in the Diplomat 🤝…" },
+              { agent: "diplomat", emoji: "🤝", name: "Diplomat",
+                text: "Locked in: $1500, Tokyo, food + history." },
+              { agent: "logistician", emoji: "🧰", name: "Logistician",
+                text: "✈️ 3 flight options, $560–$740." },
+            ],
+          }),
+        ),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const agent = new FastApiAgent({
+      backendUrl: "http://backend.test",
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+
+    const events = (await collectEvents(
+      agent,
+      buildInput("sid_xyz", "Plan a trip to Tokyo"),
+    )) as BaseEvent[];
+
+    const types = events.map((e) => e.type);
+    expect(types[0]).toBe(EventType.RUN_STARTED);
+    expect(types[types.length - 1]).toBe(EventType.RUN_FINISHED);
+    // Three lines × (START + CONTENT + END) = 9 message events.
+    const messageEvents = types.filter((t) =>
+      t === EventType.TEXT_MESSAGE_START ||
+      t === EventType.TEXT_MESSAGE_CONTENT ||
+      t === EventType.TEXT_MESSAGE_END,
+    );
+    expect(messageEvents).toHaveLength(9);
+
+    const contentEvents = events.filter(
+      (e) => e.type === EventType.TEXT_MESSAGE_CONTENT,
+    ) as { delta: string }[];
+    expect(contentEvents.map((e) => e.delta)).toEqual([
+      "**🧭 Supervisor** — Bringing in the Diplomat 🤝…",
+      "**🤝 Diplomat** — Locked in: $1500, Tokyo, food + history.",
+      "**🧰 Logistician** — ✈️ 3 flight options, $560–$740.",
+    ]);
+
+    // Each line should use a fresh messageId so the chat UI treats them
+    // as separate bubbles.
+    const startIds = (events.filter((e) => e.type === EventType.TEXT_MESSAGE_START) as { messageId: string }[])
+      .map((e) => e.messageId);
+    expect(new Set(startIds).size).toBe(3);
+  });
+
   it("emits RUN_ERROR when the backend is unreachable", async () => {
     fetchSpy.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const agent = new FastApiAgent({
@@ -161,6 +216,47 @@ describe("FastApiAgent.run", () => {
     ) as { delta: string } | undefined;
     expect(contentEvent?.delta).toContain("Backend unreachable");
     expect(contentEvent?.delta).toContain("ECONNREFUSED");
+  });
+
+  it("forwards the Supabase access token as a Bearer when configured", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify(makeBackendResponse("hi")), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const agent = new FastApiAgent({
+      backendUrl: "http://backend.test",
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+      accessToken: "jwt-abc",
+    });
+
+    await collectEvents(agent, buildInput("sid_xyz", "hi"));
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(init.headers).toMatchObject({
+      "content-type": "application/json",
+      authorization: "Bearer jwt-abc",
+    });
+  });
+
+  it("omits the Authorization header when no token is configured", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify(makeBackendResponse("hi")), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const agent = new FastApiAgent({
+      backendUrl: "http://backend.test",
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+
+    await collectEvents(agent, buildInput("sid_xyz", "hi"));
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(init.headers).not.toHaveProperty("authorization");
   });
 
   it("emits a non-2xx error including the upstream status", async () => {
