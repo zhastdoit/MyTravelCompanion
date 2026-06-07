@@ -21,10 +21,21 @@ const formatDate = (iso: string): string => {
 const defaultName = (trip: SavedTripSummary): string =>
   trip.name || `${trip.origin || "?"} → ${trip.destination || "?"}`;
 
-export const SavedTripRow = ({ trip }: { trip: SavedTripSummary }) => {
+interface SavedTripRowProps {
+  trip: SavedTripSummary;
+  /**
+   * Called after a successful rename. When provided (e.g. inside the trips
+   * popup), the parent re-fetches its own list; otherwise we fall back to a
+   * full router refresh for the standalone /trips page.
+   */
+  onRenamed?: (name: string) => void;
+}
+
+export const SavedTripRow = ({ trip, onRenamed }: SavedTripRowProps) => {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(defaultName(trip));
+  const [displayName, setDisplayName] = useState(defaultName(trip));
+  const [name, setName] = useState(displayName);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,9 +59,11 @@ export const SavedTripRow = ({ trip }: { trip: SavedTripSummary }) => {
         setSaving(false);
         return;
       }
+      setDisplayName(next);
       setEditing(false);
       setSaving(false);
-      router.refresh();
+      if (onRenamed) onRenamed(next);
+      else router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setSaving(false);
@@ -58,7 +71,7 @@ export const SavedTripRow = ({ trip }: { trip: SavedTripSummary }) => {
   };
 
   const cancel = () => {
-    setName(defaultName(trip));
+    setName(displayName);
     setError(null);
     setEditing(false);
   };
@@ -113,9 +126,7 @@ export const SavedTripRow = ({ trip }: { trip: SavedTripSummary }) => {
           <MapPin className="size-4" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">
-            {defaultName(trip)}
-          </div>
+          <div className="truncate text-sm font-semibold">{displayName}</div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
             <span>
               {trip.block_count} activit{trip.block_count === 1 ? "y" : "ies"}
