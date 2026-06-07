@@ -22,11 +22,30 @@ export const ACTIVE_FORM_COMPONENT = {
 export type ActiveFormComponent =
   (typeof ACTIVE_FORM_COMPONENT)[keyof typeof ACTIVE_FORM_COMPONENT];
 
+export const BLOCK_CATEGORIES = {
+  MEAL: "MEAL",
+  SIGHT: "SIGHT",
+  ACTIVITY: "ACTIVITY",
+  REST: "REST",
+  TRANSIT: "TRANSIT",
+  NIGHTLIFE: "NIGHTLIFE",
+  SHOPPING: "SHOPPING",
+} as const;
+
+export type BlockCategory =
+  (typeof BLOCK_CATEGORIES)[keyof typeof BLOCK_CATEGORIES];
+
 export interface CompiledConstraints {
   budget_ceiling_usd: number;
   pacing: Pacing;
   must_include_tags: string[];
   avoid_tags: string[];
+  /** Specific named places the user explicitly asked for (e.g. "Louvre"). */
+  must_include_places: string[];
+  /** Trip length in calendar days; `0` until the Diplomat sets it. */
+  duration_days: number;
+  /** Trip start as ISO-8601 (YYYY-MM-DD); empty until the Diplomat picks one. */
+  start_date: string;
 }
 
 export interface GroupProfile {
@@ -42,6 +61,10 @@ export interface CalendarBlock {
   activity_name: string;
   type: ActivityType;
   coordinates: LngLat;
+  /** Approximate length of the activity in minutes. Defaults to 90. */
+  duration_minutes: number;
+  /** Free-text icon hint set by the Logistician. Empty falls back to `type`. */
+  category: BlockCategory | "";
 }
 
 export interface ItineraryManifest {

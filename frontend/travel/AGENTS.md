@@ -2,155 +2,157 @@
 
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+This version has breaking changes — APIs, conventions, and file structure may all differ
+from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before
+writing any code. Heed deprecation notices.
 
-1. The Frontend Mission
+## 1. The frontend mission
 
-In a standard app, users click buttons to mutate database states. In SyncTrip, the user chats with the AI, the AI mutates the state, and the React frontend instantly reacts to those changes.
+In a standard app, users click buttons to mutate database states. In SyncTrip, the user
+chats with the AI, the AI mutates the state on the **FastAPI agent server**, and the React
+frontend re-fetches `TripState` and reactively re-renders.
 
 Your mission as the frontend engineer is to:
 
-    Build a beautiful, reactive dashboard (Mapbox + Calendar).
+- Build a beautiful, reactive dashboard (Mapbox + day-grouped timeline + day filter).
+- Give the AI "eyes" — pass `TripState` into `useCopilotReadable` so backend agents always
+  know what the user is looking at.
+- Render generative UI (`GROUP_AGREEMENT`, `FLIGHT_PICKER`) inline beside the itinerary
+  whenever `state.copilot_ui_hooks.active_form_component` is set.
 
-    Give the AI "eyes" to read the dashboard using useCopilotReadable.
+## 2. The Golden Contract — `TripState` lives in React state, **synced from the backend**
 
-    Give the AI "hands" to click buttons, update state, and render custom components using useCopilotAction.
+Backend is the source of truth. `lib/use-trip-backend-state.ts` re-fetches
+`/api/trip/{sid}/state` on mount and after every CopilotKit `isLoading` falling edge,
+storing it in a single `useState<TripState>` at the dashboard root. The current schema
+(see `types/trip.ts`) is:
 
-2. The Golden Contract (React Local State)
-
-You do not need to wait for the backend database to be ready. You will store the entire application state in a single React useState hook at the top level of your dashboard.
-
-Create this dummy initial state to build your UI against:
-TypeScript
-
+```ts
 // types/trip.ts
 export interface TripState {
-session_id: string;
-group_profile: {
-compiled_constraints: {
-budget_ceiling_usd: number;
-pacing: "RELAXED" | "INTENSE";
-must_include_tags: string[];
-};
-};
-itinerary_manifest: {
-origin: string;
-destination: string;
-calendar_blocks: Array<{
-id: string;
-timestamp_start: string;
-activity_name: string;
-type: "OUTDOOR" | "INDOOR" | "TRANSIT";
-coordinates: [number, number]; // [Longitude, Latitude] for Mapbox
-}>;
-};
+  session_id: string;
+  user_auth_id?: string;
+
+  group_profile: {
+    compiled_constraints: {
+      budget_ceiling_usd: number;
+      pacing: "RELAXED" | "INTENSE";
+      must_include_tags: string[];
+      avoid_tags: string[];
+      must_include_places: string[];   // user-named landmarks (e.g. ["Louvre"])
+      duration_days: number;
+      start_date: string;              // ISO YYYY-MM-DD
+    };
+  };
+
+  group_members: GroupMember[];        // frontend-only
+
+  itinerary_manifest: {
+    origin: string;
+    destination: string;
+    calendar_blocks: Array<{
+      id: string;
+      timestamp_start: string;         // ISO 8601 UTC
+      activity_name: string;
+      type: "OUTDOOR" | "INDOOR" | "TRANSIT";
+      coordinates: [number, number];   // [lng, lat] — Mapbox order (flipped at the bridge)
+      duration_minutes: number;        // drives start–end time + ICS DTEND
+      category: "" | "MEAL" | "SIGHT" | "ACTIVITY" | "REST"
+              | "TRANSIT" | "NIGHTLIFE" | "SHOPPING";
+    }>;
+    flight_options: FlightOption[];
+    selected_flight_id: string;
+  };
+
+  copilot_ui_hooks: {
+    active_form_component: "NONE" | "GROUP_AGREEMENT" | "FLIGHT_PICKER";
+    system_notifications: string[];
+  };
 }
+```
 
-// In your Dashboard.tsx
-const [tripState, setTripState] = useState<TripState>(mockTripData);
+Pass `tripState.itinerary_manifest` as props to `TripMap` and `ItineraryTimeline` so they
+re-render whenever the data changes. Apply the day filter at the dashboard level and pass
+the chosen `selectedDate` into both components — they preserve trip-wide day numbering
+when isolated.
 
-Pass tripState.itinerary_manifest as props to your Mapbox and Calendar components so they re-render whenever the data changes. 3. Giving the AI "Eyes": useCopilotReadable
+## 3. Giving the AI "eyes": `useCopilotReadable`
 
-The AI agents running on the backend have no idea what the user is looking at unless you explicitly tell them. By passing your React state into useCopilotReadable, CopilotKit silently syncs it to the backend on every chat prompt.
+Backend agents have no idea what the user is looking at unless you explicitly tell them.
+By passing your React state into `useCopilotReadable`, CopilotKit silently syncs it to
+the backend on every chat prompt.
 
-If a user types "Change the first activity to something cheaper," the AI automatically knows what the "first activity" is.
+If a user types *"Change the first activity to something cheaper,"* the AI automatically
+knows what the "first activity" is.
 
-Implementation:
-TypeScript
-
+```tsx
 import { useCopilotReadable } from "@copilotkit/react-core";
 
-// Place this inside your main Dashboard component
 useCopilotReadable({
-description: "The current state of the travel itinerary, including the active calendar blocks and group budget constraints.",
-value: tripState,
+  description:
+    "The current state of the travel itinerary, including active calendar blocks and group constraints.",
+  value: tripState,
 });
+```
 
-4. Giving the AI "Hands": useCopilotAction
+## 4. Generative UI driven by `copilot_ui_hooks`
 
-This is how the backend agents manipulate the frontend. You define actions (functions) that the AI is allowed to execute. When the OpenAI agent triggers a tool on the backend, CopilotKit fires the corresponding action in your React code.
+The Logistician sets `state.copilot_ui_hooks.active_form_component = "FLIGHT_PICKER"`
+(or the Diplomat sets `"GROUP_AGREEMENT"`) when a form is needed. The dashboard renders
+the matching React card inline beside the timeline. `form_payload` carries the data — for
+`FLIGHT_PICKER`, that's `{ title, options: [FlightOption…] }` where each option has a
+`book_url`. When the user picks a flight, `POST /api/trip/{sid}/select` clears the form
+and sets `selected_flight_id`.
 
-You need to define actions for State Mutations and Component Injection.
-Action A: Mutating the Dashboard (State Updates)
+```tsx
+{activeForm === "FLIGHT_PICKER" ? (
+  <FlightCheckoutCard {...flightStub} onConfirm={handleFlightCheckout} />
+) : null}
+```
 
-When the "Reshuffler Agent" swaps a rained-out outdoor event for an indoor museum, it needs a way to update your React state so the map redraws.
-TypeScript
+`system_notifications` (e.g. weather reroute toasts) drive the `<NotificationToaster />`.
 
-import { useCopilotAction } from "@copilotkit/react-core";
+## 5. Mocking the backend for local UI work
 
-useCopilotAction({
-name: "updateItineraryBlock",
-description: "Updates a specific calendar block in the UI, usually due to weather or user preference changes.",
-parameters: [
-{ name: "blockId", type: "string", description: "The ID of the block to replace", required: true },
-{ name: "newActivityName", type: "string", required: true },
-{ name: "newType", type: "string", required: true }, // "INDOOR" | "OUTDOOR"
-{ name: "newCoordinates", type: "number[]", description: "[lng, lat]", required: true }
-],
-handler: async ({ blockId, newActivityName, newType, newCoordinates }) => {
-// This executes locally in React when the AI fires the tool
-setTripState((prev) => {
-const updatedBlocks = prev.itinerary_manifest.calendar_blocks.map(block =>
-block.id === blockId
-? { ...block, activity_name: newActivityName, type: newType, coordinates: newCoordinates }
-: block
-);
-return { ...prev, itinerary_manifest: { ...prev.itinerary_manifest, calendar_blocks: updatedBlocks } };
-});
-},
-});
+CopilotKit expects a real backend at `/api/copilotkit`. To work on UI without the FastAPI
+crew running, set `BACKEND_URL` to an unreachable host and rely on `lib/mock-trip.ts` —
+the dashboard renders the mock fixture in unauthenticated demo mode. To preview generative
+UI cards in isolation, render them directly in JSX with stub props until they're
+pixel-perfect, then move them inside the conditional that watches `active_form_component`.
 
-Action B: Generative UI (Rendering Components in Chat)
-
-If the AI finds a flight, it shouldn't just paste text. It should drop a functional native React <CheckoutForm /> component directly into the chat sidebar.
-TypeScript
-
-useCopilotAction({
-name: "renderFlightCheckout",
-description: "Renders an interactive checkout form when the user is ready to book a flight.",
-parameters: [
-{ name: "airline", type: "string", required: true },
-{ name: "price", type: "number", required: true },
-{ name: "flightNumber", type: "string", required: true }
-],
-// Instead of a handler, we use 'render' to inject a component
-render: ({ args }) => (
-<div className="p-4 border rounded-lg bg-slate-900 text-white">
-<h3 className="font-bold">{args.airline} - {args.flightNumber}</h3>
-<p className="text-xl">${args.price}</p>
-<button
-className="mt-2 w-full bg-blue-600 hover:bg-blue-500 py-2 rounded"
-onClick={() => alert(`Purchasing ${args.flightNumber} locally!`)} >
-Confirm Booking
-</button>
-</div>
-),
-});
-
-5. Mocking the API (How to test without the Backend)
-
-Because CopilotKit expects a real backend endpoint (/api/copilotkit), testing your UI before Track 2 finishes the FastAPI server can be tricky.
-
-The Hackathon Trick:
-In your layout.tsx, wrap the app in the provider, but leave the runtimeUrl blank or point it to a simple local Next.js mock API route during development.
-TypeScript
-
-// app/layout.tsx
+```tsx
+// app/layout.tsx — runtimeUrl is local because we self-host CopilotRuntime
 import { CopilotKit } from "@copilotkit/react-core";
 import "@copilotkit/react-ui/styles.css";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-return (
-<html lang="en">
-<body>
-<CopilotKit runtimeUrl="/api/copilotkit">
-{children}
-</CopilotKit>
-</body>
-</html>
-);
+  return (
+    <html lang="en">
+      <body>
+        <CopilotKit runtimeUrl="/api/copilotkit">{children}</CopilotKit>
+      </body>
+    </html>
+  );
 }
+```
 
-To test your UI components visually without an AI triggering them, just temporarily render <CheckoutForm airline="MockAir" price={500} flightNumber="M123"/> directly in your Dashboard JSX until the UI is pixel-perfect. Once it looks good, move it inside the useCopilotAction render block.
+## 6. Per-day routing & time math
+
+`lib/use-trip-routes.ts` calls Mapbox Directions once per session, caches in
+`sessionStorage`, and returns `{ routes: DayRoute[], geojson: FeatureCollection }`.
+Walking under 1.5 km, driving otherwise. **It excludes TRANSIT blocks** so flight pins
+don't draw routes from airports — keep that invariant if you refactor.
+
+The timeline uses `block.duration_minutes` to compute the end time
+(`new Date(start.getTime() + durationMin * 60_000)`) and renders `HH:mm–HH:mm` plus a
+duration label ("2h", "1h 30m"). The same field flows into `lib/ics.ts` so calendar
+exports have correct `DTEND`.
+
+## 7. Auth + Google Calendar
+
+`/login` does email/password + Google OAuth. The Google flow asks for the
+`https://www.googleapis.com/auth/calendar.events` scope with `access_type=offline` so
+Supabase keeps a `provider_token` for direct Calendar API pushes. `AddToCalendarButton`
+falls back to ICS download (`lib/ics.ts`) when the token is missing or expired.
 
 <!-- END:nextjs-agent-rules -->

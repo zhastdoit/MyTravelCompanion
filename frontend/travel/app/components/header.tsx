@@ -1,4 +1,4 @@
-import { MapPin, Sparkles, Wallet } from "lucide-react";
+import { MapPin, Pin, Sparkles, Wallet } from "lucide-react";
 import type { GroupProfile, ItineraryManifest } from "@/types/trip";
 import { BrandMark } from "./brand-mark";
 
@@ -17,7 +17,8 @@ const formatBudget = (usd: number): string =>
 
 export const Header = ({ itinerary, groupProfile, rightSlot }: HeaderProps) => {
   const { origin, destination } = itinerary;
-  const { budget_ceiling_usd, pacing } = groupProfile.compiled_constraints;
+  const { budget_ceiling_usd, pacing, must_include_places } =
+    groupProfile.compiled_constraints;
 
   return (
     <header className="sticky top-0 z-30 flex flex-wrap items-center gap-3 border-b border-border bg-surface/85 px-5 py-2.5 backdrop-blur">
@@ -49,6 +50,22 @@ export const Header = ({ itinerary, groupProfile, rightSlot }: HeaderProps) => {
       >
         <span className="font-medium capitalize">{pacing.toLowerCase()}</span>
       </Pill>
+
+      {must_include_places.length > 0 ? (
+        <Pill icon={<Pin className="size-3.5 text-primary" aria-hidden />}>
+          <span className="text-muted">Must include</span>
+          <span className="flex flex-wrap items-center gap-1">
+            {must_include_places.map((place) => (
+              <span
+                key={place}
+                className="rounded-sm bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary"
+              >
+                {place}
+              </span>
+            ))}
+          </span>
+        </Pill>
+      ) : null}
 
       {rightSlot ? <div className="ml-auto flex items-center gap-2">{rightSlot}</div> : null}
     </header>

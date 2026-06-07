@@ -173,6 +173,137 @@ def test_query_geoapify_geocode_failure_falls_back_to_seed(monkeypatch):
                for b in state.itinerary_manifest.calendar_blocks)
 
 
+def test_query_geoapify_fallback_spreads_blocks_across_days():
+    """Multi-day duration must produce blocks on distinct calendar dates."""
+    state = _trip(destination="Tokyo")
+    state.group_profile.compiled_constraints.duration_days = 3
+    state.group_profile.compiled_constraints.start_date = "2026-07-15"
+    tools.query_geoapify(state, tags=["food", "historic", "modern"])
+    blocks = state.itinerary_manifest.calendar_blocks
+    # 3 days × 5 fallback slots (breakfast/morning/lunch/afternoon/dinner)
+    assert len(blocks) == 15
+    dates = sorted({b.timestamp_start[:10] for b in blocks})
+    assert dates == ["2026-07-15", "2026-07-16", "2026-07-17"]
+    for date in dates:
+        per_day = [b for b in blocks if b.timestamp_start.startswith(date)]
+        assert len(per_day) == 5
+        hours = sorted({b.timestamp_start[11:13] for b in per_day})
+        assert hours == ["08", "10", "12", "14", "19"]
+
+
+@respx.mock
+def test_query_geoapify_live_path_walks_anchors_per_day(monkeypatch):
+    """Live mode hits Geoapify once per day with a different bias point."""
+    monkeypatch.setenv("GEOAPIFY_API_KEY", "g")
+    respx.get("https://api.geoapify.com/v1/geocode/search").mock(
+        return_value=Response(200, json={"features": [
+            {"geometry": {"coordinates": [139.6503, 35.6762]}},
+        ]}))
+    places_route = respx.get("https://api.geoapify.com/v2/places")
+
+    # Each day returns a distinct named place so dedup doesn't collapse them.
+    def _places_response(request):
+        # Anchor's lon (call number 1..N) — encoded into the name.
+        idx = len(places_route.calls)
+        return Response(200, json={"features": [
+            {"properties": {"name": f"Day{idx}-Place", "categories": ["catering"]},
+             "geometry": {"coordinates": [139.65 + idx * 0.01, 35.68 + idx * 0.01]}},
+        ]})
+    places_route.mock(side_effect=_places_response)
+
+    state = _trip(destination="Tokyo")
+    state.group_profile.compiled_constraints.duration_days = 3
+    state.group_profile.compiled_constraints.start_date = "2026-07-15"
+    msg = tools.query_geoapify(state, tags=["food"])
+
+    assert msg.startswith("[Geoapify]"), msg
+    assert places_route.call_count == 3
+    blocks = state.itinerary_manifest.calendar_blocks
+    assert {b.activity_name for b in blocks} == {"Day0-Place", "Day1-Place", "Day2-Place"}
+    # Distinct days and ascending dates.
+    days = [b.timestamp_start[:10] for b in blocks]
+    assert sorted(set(days)) == ["2026-07-15", "2026-07-16", "2026-07-17"]
+
+
+# -------------------------- add_activity_block -----------------------------
+
+def test_add_activity_block_uses_fixture_jitter_without_geoapify_key():
+    state = _trip(destination="Tokyo")
+    state.group_profile.compiled_constraints.duration_days = 3
+    state.group_profile.compiled_constraints.start_date = "2026-07-15"
+
+    msg = tools.add_activity_block(state, name="Sensoji Temple", day_index=0,
+                                   time_slot="morning", type="OUTDOOR",
+                                   neighborhood="Asakusa")
+    assert "Sensoji Temple" in msg
+    blocks = state.itinerary_manifest.calendar_blocks
+    assert len(blocks) == 1
+    blk = blocks[0]
+    assert blk.activity_name == "Sensoji Temple"
+    assert blk.type == "OUTDOOR"
+    assert blk.timestamp_start == "2026-07-15T10:30:00Z"
+    # Tokyo center is roughly (35.7, 139.78) per the fixture; jitter must keep
+    # the block within a sensible bounding box of the city.
+    assert 35.0 < blk.coordinates[0] < 36.5
+    assert 139.0 < blk.coordinates[1] < 140.5
+
+
+def test_add_activity_block_repeats_produce_distinct_timestamps():
+    state = _trip(destination="Tokyo")
+    state.group_profile.compiled_constraints.duration_days = 2
+    state.group_profile.compiled_constraints.start_date = "2026-07-15"
+    for day, slot in [(0, "breakfast"), (0, "morning"), (0, "lunch"),
+                      (0, "afternoon"), (0, "dinner"), (1, "morning"),
+                      (1, "evening")]:
+        tools.add_activity_block(state, name=f"Activity-{day}-{slot}",
+                                 day_index=day, time_slot=slot, type="INDOOR")
+    blocks = state.itinerary_manifest.calendar_blocks
+    timestamps = [b.timestamp_start for b in blocks]
+    assert timestamps == [
+        "2026-07-15T08:30:00Z", "2026-07-15T10:30:00Z", "2026-07-15T12:30:00Z",
+        "2026-07-15T14:30:00Z", "2026-07-15T19:00:00Z",
+        "2026-07-16T10:30:00Z", "2026-07-16T21:00:00Z",
+    ]
+
+
+def test_add_activity_block_requires_destination():
+    state = _trip()  # no destination set yet
+    msg = tools.add_activity_block(state, name="Sensoji Temple", day_index=0)
+    assert "destination not set" in msg
+    assert state.itinerary_manifest.calendar_blocks == []
+
+
+@respx.mock
+def test_add_activity_block_uses_geoapify_when_key_present(monkeypatch):
+    monkeypatch.setenv("GEOAPIFY_API_KEY", "g")
+    # First call is the destination city geocode (text="Tokyo"); second is the
+    # named-place lookup biased to that center. Dispatch on the `text` param
+    # rather than call ordering so respx call-count timing doesn't matter.
+    geocode_route = respx.get("https://api.geoapify.com/v1/geocode/search")
+
+    def _route(request):
+        text = request.url.params.get("text", "")
+        if "Sensoji" in text:
+            return Response(200, json={"features": [
+                {"geometry": {"coordinates": [139.7967, 35.7148]}},
+            ]})
+        return Response(200, json={"features": [
+            {"geometry": {"coordinates": [139.6503, 35.6762]}},
+        ]})
+    geocode_route.mock(side_effect=_route)
+
+    state = _trip(destination="Tokyo")
+    msg = tools.add_activity_block(state, name="Sensoji Temple", day_index=2,
+                                   time_slot="evening", type="OUTDOOR",
+                                   neighborhood="Asakusa")
+    assert "Sensoji Temple" in msg
+    blk = state.itinerary_manifest.calendar_blocks[-1]
+    # Stored as [lat, lon] per state contract.
+    assert abs(blk.coordinates[0] - 35.7148) < 1e-3
+    assert abs(blk.coordinates[1] - 139.7967) < 1e-3
+    assert blk.timestamp_start.endswith("T21:00:00Z")
+
+
 # ------------------------------ OpenWeather --------------------------------
 
 def _outdoor_state() -> TripState:

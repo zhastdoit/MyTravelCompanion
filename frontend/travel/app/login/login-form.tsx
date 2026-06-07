@@ -74,9 +74,16 @@ export const LoginForm = ({ next, initialError }: LoginFormProps) => {
     if (!supabase) return;
     setError(null);
     setPending(true);
+    // `calendar.events` is the narrow scope needed to push trip blocks to
+    // the user's primary Google Calendar (no calendar-list management). The
+    // `access_type=offline` + `prompt=consent` combo asks Google to mint a
+    // refresh token so future signed-in sessions still hold a usable
+    // `provider_token` after the first hour expires.
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
+        scopes: "https://www.googleapis.com/auth/calendar.events",
+        queryParams: { access_type: "offline", prompt: "consent" },
         redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(
           fallbackRedirect(next),
         )}`,

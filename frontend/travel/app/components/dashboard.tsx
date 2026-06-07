@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Share2 } from "lucide-react";
 import { useCopilotChat } from "@copilotkit/react-core";
 import { CopilotSidebar } from "@copilotkit/react-ui";
@@ -45,6 +45,8 @@ import {
 } from "@/lib/form-message";
 import { AuthMenu } from "./auth-menu";
 import { SaveTripButton } from "./save-trip-button";
+import { AddToCalendarButton } from "./add-to-calendar-button";
+import { DayFilter } from "./day-filter";
 
 interface DashboardProps {
   /** Stable session id, mirrored as the FastAPI `session_id` and CopilotKit `threadId`. */
@@ -143,6 +145,21 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
     shareDialogRef.current?.open();
   }, []);
 
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // Reset to "all days" when the chosen date is no longer in the itinerary
+  // (e.g. after a reset). Memoizing the date set keeps reactivity cheap.
+  const datesInTrip = useMemo(
+    () =>
+      new Set(
+        itinerary_manifest.calendar_blocks
+          .filter((b) => b.type !== "TRANSIT")
+          .map((b) => b.timestamp_start.slice(0, 10)),
+      ),
+    [itinerary_manifest.calendar_blocks],
+  );
+  const effectiveSelectedDate =
+    selectedDate && datesInTrip.has(selectedDate) ? selectedDate : null;
+
   const flightStub = useMemo(
     () => deriveFlightStub(itinerary_manifest.origin, itinerary_manifest.destination),
     [itinerary_manifest.origin, itinerary_manifest.destination],
@@ -169,6 +186,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                       : undefined
                   }
                 />
+                <AddToCalendarButton tripState={tripState} />
                 <button
                   type="button"
                   onClick={openShare}
@@ -195,13 +213,23 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
             }
           />
         ) : (
-          <div className="flex flex-1 flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5">
-            <section className="min-h-[420px] lg:min-h-0">
-              <TripMap blocks={itinerary_manifest.calendar_blocks} className="h-full" />
-            </section>
+          <div className="flex flex-1 flex-col gap-4">
+            <DayFilter
+              blocks={itinerary_manifest.calendar_blocks}
+              selectedDate={effectiveSelectedDate}
+              onSelect={setSelectedDate}
+            />
+            <div className="flex flex-1 flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5">
+              <section className="min-h-[420px] lg:min-h-0">
+                <TripMap
+                  blocks={itinerary_manifest.calendar_blocks}
+                  selectedDate={effectiveSelectedDate ?? undefined}
+                  className="h-full"
+                />
+              </section>
 
-            <aside className="flex min-w-0 flex-col gap-4">
-              {activeForm === ACTIVE_FORM_COMPONENT.GROUP_AGREEMENT ? (
+              <aside className="flex min-w-0 flex-col gap-4">
+                {activeForm === ACTIVE_FORM_COMPONENT.GROUP_AGREEMENT ? (
                 <GroupAgreementForm
                   proposedBudgetUsd={group_profile.compiled_constraints.budget_ceiling_usd}
                   proposedPacing={group_profile.compiled_constraints.pacing}
@@ -228,18 +256,22 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                 />
               ) : null}
 
-              <div className="rounded-md border border-border bg-surface p-3">
-                <div className="mb-2.5 flex items-baseline justify-between border-b border-border pb-2">
-                  <h2 className="text-sm font-semibold uppercase tracking-wider">
-                    Itinerary
-                  </h2>
-                  <span className="font-mono text-[11px] text-muted tabular-nums">
-                    {itinerary_manifest.calendar_blocks.length} blocks
-                  </span>
+                <div className="rounded-md border border-border bg-surface p-3">
+                  <div className="mb-2.5 flex items-baseline justify-between border-b border-border pb-2">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider">
+                      Itinerary
+                    </h2>
+                    <span className="font-mono text-[11px] text-muted tabular-nums">
+                      {itinerary_manifest.calendar_blocks.length} blocks
+                    </span>
+                  </div>
+                  <ItineraryTimeline
+                    blocks={itinerary_manifest.calendar_blocks}
+                    selectedDate={effectiveSelectedDate ?? undefined}
+                  />
                 </div>
-                <ItineraryTimeline blocks={itinerary_manifest.calendar_blocks} />
-              </div>
-            </aside>
+              </aside>
+            </div>
           </div>
         )}
       </main>
