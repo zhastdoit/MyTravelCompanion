@@ -198,6 +198,17 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
                 break
             continue
         if d.kind == "tool":
+            if d.tool in executed:                 # model repeating a tool — nudge it forward
+                note = (f"You already called {d.tool} this turn (result unchanged). "
+                        f"Call a DIFFERENT tool or transfer_to_supervisor now.")
+                if not USE_MOCK_LLM:
+                    transcript.append({"role": "tool", "tool_call_id": d.content, "content": note})
+                transfers_since_work += 1
+                trail.append({"agent": active, "action": f"skip:{d.tool} (repeat)"})
+                if transfers_since_work >= LOOP_LIMIT:
+                    trail.append({"agent": active, "action": "loop-detected"})
+                    break
+                continue
             result = WORK_TOOLS[d.tool](state, **(d.args or {}))
             executed.add(d.tool)
             transfers_since_work = 0

@@ -57,9 +57,10 @@ AGENTS: dict[str, Agent] = {
         name="logistician", model=SMART,
         instructions=(
             "You are the Multi-Modal Logistician — the data broker. " + _STATE_RULES +
-            " Using the constraints, call query_amadeus for flights and query_geoapify to add "
-            "attractions to the itinerary. The flight search surfaces a FLIGHT_PICKER form for the "
-            "user. When the itinerary has options, transfer_to_supervisor."),
+            " Do EXACTLY this, in order: (1) call query_amadeus ONCE for flights, "
+            "(2) call query_geoapify ONCE to add attractions to the itinerary, "
+            "(3) transfer_to_supervisor. NEVER call the same tool twice — once a tool has "
+            "returned, move to the next step. Do not call query_amadeus again after it succeeds."),
         work_tools=["query_amadeus", "query_geoapify"],
         can_transfer_to=["supervisor"]),
 
