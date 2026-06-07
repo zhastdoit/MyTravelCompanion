@@ -14,6 +14,10 @@ OpenAI-native backend is the part to de-risk with ryw — see DESIGN.md. A stub
 `/copilotkit` mount is left below.
 """
 from __future__ import annotations
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / ".env")  # must run before local imports read env
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel

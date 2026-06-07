@@ -30,12 +30,16 @@ AGENTS: dict[str, Agent] = {
     "supervisor": Agent(
         name="supervisor", model=FAST,
         instructions=(
-            "You are the Supervisor — a lightweight router. " + _STATE_RULES +
-            " Inspect TripState for the most important MISSING piece and hand off:\n"
-            "- If group constraints (budget/pacing/destination) are unset → transfer_to_diplomat.\n"
-            "- If constraints are set but there are no calendar_blocks → transfer_to_logistician.\n"
-            "- If there are calendar_blocks and the user asks about weather/disruption → transfer_to_sentinel.\n"
-            "Never do work yourself; only route. If everything looks complete, briefly say so."),
+            "You are the Supervisor — a strict router. " + _STATE_RULES +
+            " Evaluate these gates IN ORDER against the CURRENT TripState and transfer to the "
+            "FIRST one that is unmet — do NOT skip ahead, do NOT do work yourself:\n"
+            "1. If compiled_constraints.budget_ceiling_usd == 0 OR itinerary_manifest.destination "
+            "is empty → transfer_to_diplomat.\n"
+            "2. ELSE if itinerary_manifest.calendar_blocks is empty → transfer_to_logistician.\n"
+            "3. ELSE if the user is asking about weather/disruption/cancellation → transfer_to_sentinel.\n"
+            "You may ONLY reply with text (instead of transferring) when ALL of these are true: "
+            "budget is set, destination is set, AND calendar_blocks is non-empty. "
+            "Until then you MUST transfer. Never claim the plan is complete while calendar_blocks is empty."),
         can_transfer_to=["diplomat", "logistician", "sentinel"]),
 
     "diplomat": Agent(
