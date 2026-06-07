@@ -89,13 +89,33 @@ JSON
 "type": "OUTDOOR | INDOOR | TRANSIT",
 "coordinates": [48.8606, 2.3376]
 }
-]
+],
+"flight_options": [
+{
+"id": "f1",
+"airline": "ANA",
+"price_usd": 612,
+"stops": 1,
+"duration": "14h",
+"depart": "SFO",
+"arrive": "Tokyo",
+"book_url": "https://..."
+}
+],
+"selected_flight_id": ""
 },
 "copilot_ui_hooks": {
 "active_form_component": "NONE | GROUP_AGREEMENT | FLIGHT_PICKER",
+"form_payload": {},
 "system_notifications": []
 }
 }
+
+Notes for the frontend (generative UI):
+- active_form_component says WHICH form to render; form_payload carries its DATA.
+  FLIGHT_PICKER -> form_payload = { title, options:[FlightOption...] } (each option has a book_url link).
+  GROUP_AGREEMENT -> form_payload = { title, constraints, route }.
+- When the user picks a flight, POST /api/select/{sid} {flight_id} -> sets selected_flight_id and clears the form.
 
 5. The Agent Cast (OpenAI SDK Definitions)
 

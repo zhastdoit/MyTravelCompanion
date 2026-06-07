@@ -27,14 +27,28 @@ class CalendarBlock(BaseModel):
     coordinates: list[float] = Field(default_factory=list)   # [lat, lon]
 
 
+class FlightOption(BaseModel):
+    id: str
+    airline: str = ""
+    price_usd: float = 0
+    stops: int = 0
+    duration: str = ""            # e.g. "14h"
+    depart: str = ""              # origin code/city
+    arrive: str = ""              # destination code/city
+    book_url: str = ""            # deep link the UI renders as a "Book" button
+
+
 class ItineraryManifest(BaseModel):
     origin: str = ""
     destination: str = ""
     calendar_blocks: list[CalendarBlock] = Field(default_factory=list)
+    flight_options: list[FlightOption] = Field(default_factory=list)   # FLIGHT_PICKER data
+    selected_flight_id: str = ""                                       # set when the user picks
 
 
 class CopilotUIHooks(BaseModel):
     active_form_component: str = "NONE"   # NONE | GROUP_AGREEMENT | FLIGHT_PICKER
+    form_payload: dict = Field(default_factory=dict)   # data the active form renders
     system_notifications: list[str] = Field(default_factory=list)
 
 

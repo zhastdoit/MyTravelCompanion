@@ -23,7 +23,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from store import load_state, BACKEND
+from store import load_state, save_state, BACKEND
 from orchestrator import run_turn, reset, USE_MOCK_LLM
 import cost
 
@@ -67,6 +67,21 @@ def chat(body: ChatIn):
 @app.get("/api/state/{sid}")
 def get_state(sid: str):
     return load_state(sid).model_dump()
+
+
+class SelectIn(BaseModel):
+    flight_id: str
+
+
+@app.post("/api/select/{sid}")
+def select_flight(sid: str, body: SelectIn):
+    """User picked a flight in the FLIGHT_PICKER form -> record it and clear the form."""
+    st = load_state(sid)
+    st.itinerary_manifest.selected_flight_id = body.flight_id
+    st.copilot_ui_hooks.active_form_component = "NONE"
+    st.copilot_ui_hooks.form_payload = {}
+    save_state(st)
+    return st.model_dump()
 
 
 @app.post("/api/reset/{sid}")

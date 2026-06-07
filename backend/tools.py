@@ -10,7 +10,8 @@ function names the real wrappers will use, so swapping to live keys is local to 
 """
 from __future__ import annotations
 import uuid
-from state import TripState, CalendarBlock
+import urllib.parse
+from state import TripState, CalendarBlock, FlightOption
 
 # ----------------------------- work tools ----------------------------------
 
@@ -32,19 +33,43 @@ def update_constraints(state: TripState, *, budget_ceiling_usd: float = 0,
         state.itinerary_manifest.origin = origin
     if destination:
         state.itinerary_manifest.destination = destination
+    # surface a GROUP_AGREEMENT confirmation form for the UI
     state.copilot_ui_hooks.active_form_component = "GROUP_AGREEMENT"
+    state.copilot_ui_hooks.form_payload = {
+        "title": "Confirm the group plan",
+        "constraints": c.model_dump(),
+        "route": {"origin": state.itinerary_manifest.origin,
+                  "destination": state.itinerary_manifest.destination},
+    }
     return (f"Constraints set: ${c.budget_ceiling_usd:.0f} cap, {c.pacing.lower()} pacing, "
             f"must={c.must_include_tags}, route {state.itinerary_manifest.origin or '?'}→"
             f"{state.itinerary_manifest.destination or '?'}.")
 
 
+# mock-but-real-shaped flight inventory (swap for live Amadeus later, same output shape)
+_FLIGHTS_SEED = [
+    {"id": "f1", "airline": "ANA",     "price_usd": 612, "stops": 1, "duration": "14h"},
+    {"id": "f2", "airline": "United",  "price_usd": 740, "stops": 0, "duration": "11h"},
+    {"id": "f3", "airline": "ZipAir",  "price_usd": 560, "stops": 2, "duration": "19h"},
+]
+
 def query_amadeus(state: TripState, *, origin: str = "", destination: str = "") -> str:
-    """Logistician: (mock) flight search. Surfaces the FLIGHT_PICKER form in the UI."""
+    """Logistician: (mock) flight search. Writes structured options + a FLIGHT_PICKER form."""
     o = origin or state.itinerary_manifest.origin or "SFO"
-    d = destination or state.itinerary_manifest.destination or "TYO"
+    d = destination or state.itinerary_manifest.destination or "Tokyo"
+    q = urllib.parse.quote(f"flights from {o} to {d}")
+    opts = [FlightOption(depart=o, arrive=d,
+                         book_url=f"https://www.google.com/travel/flights?q={q}", **f)
+            for f in _FLIGHTS_SEED]
+    state.itinerary_manifest.flight_options = opts
     state.copilot_ui_hooks.active_form_component = "FLIGHT_PICKER"
-    return (f"[Amadeus mock] {o}→{d}: 3 options — "
-            f"$612 (1 stop, 14h), $740 (nonstop, 11h), $560 (2 stops, 19h).")
+    state.copilot_ui_hooks.form_payload = {
+        "title": f"Flights {o} → {d}",
+        "options": [opt.model_dump() for opt in opts],
+    }
+    lo, hi = min(x.price_usd for x in opts), max(x.price_usd for x in opts)
+    return (f"[Amadeus mock] {o}→{d}: {len(opts)} options (${lo:.0f}-${hi:.0f}). "
+            f"FLIGHT_PICKER form ready with booking links.")
 
 
 _POI_SEED = [
