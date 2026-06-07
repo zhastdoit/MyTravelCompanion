@@ -16,15 +16,25 @@ from dataclasses import dataclass
 from state import TripState
 from store import load_state, save_state, BACKEND
 from agents import AGENTS, ENTRY_AGENT
-from tools import WORK_TOOLS, WORK_TOOL_SCHEMAS, transfer_schema
+from tools import (
+    WORK_TOOLS,
+    WORK_TOOL_SCHEMAS,
+    _responses_schema,
+    transfer_responses_schema,
+)
 from obs import op
 import cost
 
 log = logging.getLogger(__name__)
 
 USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "1") == "1"
-MAX_STEPS = 12          # hard ceiling on handoffs+tools per turn
+MAX_STEPS = 40          # hard ceiling on handoffs+tools per turn (large enough
+                        # for a 7-day composer pass: ~28 add_activity_block + handoffs)
 LOOP_LIMIT = 4          # consecutive handoffs with no productive work => spinning
+# Tools the Logistician composer fans out: each call mutates state with a
+# DIFFERENT result, so the executed-set "you already called this" guard
+# would defeat the day-by-day flow. Skip the guard for these.
+REPEATABLE_TOOLS: frozenset[str] = frozenset({"add_activity_block"})
 RETRYABLE_OPENAI_ERRORS = ("APITimeoutError", "APIConnectionError", "InternalServerError",
                            "RateLimitError")
 RETRY_BACKOFFS = (0.5, 1.5)  # seconds; one retry, then a slower retry, then give up
@@ -70,6 +80,7 @@ AGENT_META = {
     "user":        {"name": "You", "role": "", "emoji": "🧑", "avatar": "", "desc": ""},
 }
 _TOOL_ICON = {"update_constraints": "🤝", "query_amadeus": "✈️", "query_geoapify": "📍",
+              "add_activity_block": "📌",
               "check_weather": "🌦️", "reshuffle_block": "🔧"}
 
 
@@ -183,6 +194,31 @@ def _extract_destination(text: str) -> str:
     return _normalize_city(m.group(0)) if m else ""
 
 
+def _parse_duration_days(text: str) -> int:
+    """Extract trip length in calendar days. 0 = couldn't tell."""
+    if re.search(r"\blong\s+weekend\b", text):
+        return 4
+    if re.search(r"\bweekend\b", text):
+        return 2
+    if m := re.search(r"(\d+)\s*[- ]?\s*(?:day|days|nights|nite|nights)\b", text):
+        try:
+            n = int(m.group(1))
+            if 1 <= n <= 30:
+                return n
+        except ValueError:
+            pass
+    if m := re.search(r"\b(\d+)\s*[- ]?\s*week", text):
+        try:
+            n = int(m.group(1))
+            if 1 <= n <= 4:
+                return n * 7
+        except ValueError:
+            pass
+    if re.search(r"\b(?:a|one)\s+week\b", text):
+        return 7
+    return 0
+
+
 def _parse_constraints(text: str) -> dict:
     """Cheap NLP for the deterministic mock orchestrator.
 
@@ -209,6 +245,10 @@ def _parse_constraints(text: str) -> dict:
     tags = [t for t in ("food", "historic", "history", "nature", "modern", "art", "nightlife")
             if t in text]
     args["must_include_tags"] = ["historic" if t == "history" else t for t in tags] or ["food"]
+
+    duration = _parse_duration_days(text)
+    if duration:
+        args["duration_days"] = duration
 
     md = re.search(rf"\bto\s+({_KNOWN_CITY_RE})\b", text)
     if not md:
@@ -313,13 +353,80 @@ def _get_openai_client():
     return _openai_client
 
 
+# Internal transcript stays chat-completions shaped (role/content/tool_calls)
+# because mock mode reads it the same way and tests rely on the format. We
+# translate at the boundary into the Responses API's flat input items.
+def _to_responses_inputs(transcript: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for msg in transcript:
+        role = msg.get("role")
+        if role == "user":
+            out.append({"role": "user", "content": msg.get("content", "")})
+        elif role == "assistant":
+            tool_calls = msg.get("tool_calls") or []
+            if tool_calls:
+                # An assistant turn with tool_calls fans out to one
+                # `function_call` item per call (the Responses API has no
+                # "assistant message + N tool calls" combo item).
+                for tc in tool_calls:
+                    fn = tc.get("function") or {}
+                    out.append({
+                        "type": "function_call",
+                        "name": fn.get("name", ""),
+                        "arguments": fn.get("arguments", "") or "",
+                        "call_id": tc.get("id", ""),
+                    })
+            else:
+                content = msg.get("content")
+                if content is not None:
+                    out.append({"role": "assistant", "content": content})
+        elif role == "tool":
+            out.append({
+                "type": "function_call_output",
+                "call_id": msg.get("tool_call_id", ""),
+                "output": str(msg.get("content", "")),
+            })
+        elif role == "system":
+            out.append({"role": "system", "content": msg.get("content", "")})
+    return out
+
+
+def _extract_message_text(item) -> str:
+    """Pull plain text out of a Responses-API `message` output item.
+
+    The SDK exposes `content` as a list of typed parts (`output_text`,
+    `output_text.annotation`, ...). For the text path we just concatenate
+    every `text` attribute we find, regardless of part type.
+    """
+    parts = getattr(item, "content", None) or []
+    pieces: list[str] = []
+    for part in parts:
+        text = getattr(part, "text", None)
+        if isinstance(text, str):
+            pieces.append(text)
+        elif text is not None:
+            value = getattr(text, "value", None)
+            if isinstance(value, str):
+                pieces.append(value)
+    return "".join(pieces)
+
+
 @op(name="llm_decide")
 def _real_decision(active: str, state: TripState, executed: set, transcript: list[dict],
                    session_id: str) -> Decision:
     client = _get_openai_client()
     agent = AGENTS[active]
-    tools = [WORK_TOOL_SCHEMAS[t] for t in agent.work_tools] + \
-            [transfer_schema(t) for t in agent.can_transfer_to]
+
+    # Responses-API tool array: drop the chat-completions outer "function"
+    # wrapper, then bolt on the built-in `web_search_preview` tool when this
+    # agent is opted in.
+    tools: list[dict] = (
+        [_responses_schema(WORK_TOOL_SCHEMAS[t]) for t in agent.work_tools]
+        + [transfer_responses_schema(t) for t in agent.can_transfer_to]
+    )
+    if agent.web_search:
+        tools.append({"type": "web_search_preview"})
+
     # State + situational context are rendered fresh into the system prompt
     # each call so every agent sees the latest TripState (and the user's
     # first name) regardless of where in the chain we are.
@@ -337,36 +444,69 @@ def _real_decision(active: str, state: TripState, executed: set, transcript: lis
         + "\n\nCurrent TripState (JSON):\n"
         + state.model_dump_json(indent=2)
     )
-    messages = [{"role": "system", "content": system}, *transcript]
-    resp = client.chat.completions.create(
-        model=agent.model, messages=messages,
-        tools=tools or None, temperature=0.3)
-    if resp.usage:  # meter spend for the per-session cap
-        cost.add_usage(session_id, agent.model,
-                       resp.usage.prompt_tokens, resp.usage.completion_tokens)
-    msg = resp.choices[0].message
-    if msg.tool_calls:
-        # We process tool calls one at a time so the orchestrator's executed-set
-        # bookkeeping matches each tool's effect on TripState. Any extras the
-        # model proposed simultaneously are dropped — the next turn is welcome
-        # to repeat them. (Concurrent tool exec would need parallel TripState
-        # diff/merge, which we don't have.)
-        tc = msg.tool_calls[0]
-        name = tc.function.name
+    inputs = [{"role": "system", "content": system}, *_to_responses_inputs(transcript)]
+    resp = client.responses.create(
+        model=agent.model,
+        input=inputs,
+        tools=tools or None,
+        temperature=0.3,
+    )
+
+    if getattr(resp, "usage", None):  # meter spend for the per-session cap
+        usage = resp.usage
+        cost.add_usage(
+            session_id, agent.model,
+            int(getattr(usage, "input_tokens", 0) or 0),
+            int(getattr(usage, "output_tokens", 0) or 0),
+        )
+
+    output = list(getattr(resp, "output", None) or [])
+
+    # Charge built-in web_search calls before short-circuiting on tool/text
+    # output below, so the cap accounts for them even on a busy turn.
+    web_searches = sum(1 for it in output if getattr(it, "type", "") == "web_search_call")
+    if web_searches:
+        cost.add_web_search(session_id, web_searches)
+
+    # Pick the first actionable function_call. Concurrent tool calls aren't
+    # supported (TripState mutations would race) — extras are dropped and the
+    # model is welcome to retry them next turn.
+    for item in output:
+        if getattr(item, "type", "") != "function_call":
+            continue
+        name = getattr(item, "name", "") or ""
+        args_raw = getattr(item, "arguments", "") or ""
+        call_id = getattr(item, "call_id", "") or getattr(item, "id", "") or ""
         try:
-            args = json.loads(tc.function.arguments or "{}")
+            args = json.loads(args_raw or "{}")
         except json.JSONDecodeError:
             args = {}
-        transcript.append({"role": "assistant", "content": None,
-                           "tool_calls": [tc.model_dump()]})
+        transcript.append({
+            "role": "assistant", "content": None,
+            "tool_calls": [{
+                "id": call_id, "type": "function",
+                "function": {"name": name, "arguments": args_raw},
+            }],
+        })
         if name.startswith("transfer_to_"):
             target = name[len("transfer_to_"):]
-            transcript.append({"role": "tool", "tool_call_id": tc.id,
+            transcript.append({"role": "tool", "tool_call_id": call_id,
                                "content": f"transferring to {target}"})
             return Decision("transfer", target=target)
-        return Decision("tool", tool=name, args=args, content=tc.id)  # tc.id carried for tool reply
-    transcript.append({"role": "assistant", "content": msg.content})
-    return Decision("message", content=msg.content or "")
+        return Decision("tool", tool=name, args=args, content=call_id)
+
+    # No tool call — fall back to the model's text. SDK exposes `output_text`
+    # as a convenience aggregating all message parts; if that's empty we
+    # walk the items by hand.
+    text = (getattr(resp, "output_text", "") or "").strip()
+    if not text:
+        for item in output:
+            if getattr(item, "type", "") == "message":
+                text = _extract_message_text(item).strip()
+                if text:
+                    break
+    transcript.append({"role": "assistant", "content": text})
+    return Decision("message", content=text)
 
 
 def _is_retryable(err: Exception) -> bool:
@@ -463,7 +603,8 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
                 break
             continue
         if d.kind == "tool":
-            if d.tool in executed:                 # model repeating a tool — nudge it forward
+            if d.tool in executed and d.tool not in REPEATABLE_TOOLS:
+                # Model repeating a singleton tool — nudge it forward.
                 note = (f"You already called {d.tool} this turn (result unchanged). "
                         f"Call a DIFFERENT tool or transfer_to_supervisor now.")
                 if not USE_MOCK_LLM:

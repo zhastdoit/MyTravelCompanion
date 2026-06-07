@@ -22,28 +22,50 @@ PRICING: dict[str, tuple[float, float]] = {
 }
 _FALLBACK = (5.00, 15.00)   # conservative: over-estimate unknown models
 
+# Built-in tools have flat per-call pricing. Web search is currently $25/1k for
+# gpt-4o-class models on the Responses API; bump if OpenAI re-prices.
+WEB_SEARCH_USD = 0.025
+
 CAP = float(os.getenv("SESSION_USD_CAP", "1.0"))
 _ledger: dict[str, float] = {}
-_tokens: dict[str, dict] = {}     # session_id -> {prompt, completion, calls}
+_tokens: dict[str, dict] = {}     # session_id -> {prompt, completion, calls, web_searches}
 
 
 def price_of(model: str) -> tuple[float, float]:
     return PRICING.get(model, PRICING.get(model.split(":")[-1], _FALLBACK))
 
 
+def _bucket(session_id: str) -> dict:
+    return _tokens.setdefault(session_id,
+                              {"prompt": 0, "completion": 0, "calls": 0, "web_searches": 0})
+
+
 def add_usage(session_id: str, model: str, prompt_tokens: int, completion_tokens: int) -> float:
     pin, pout = price_of(model)
     cost = (prompt_tokens / 1e6) * pin + (completion_tokens / 1e6) * pout
     _ledger[session_id] = _ledger.get(session_id, 0.0) + cost
-    t = _tokens.setdefault(session_id, {"prompt": 0, "completion": 0, "calls": 0})
+    t = _bucket(session_id)
     t["prompt"] += prompt_tokens
     t["completion"] += completion_tokens
     t["calls"] += 1
     return _ledger[session_id]
 
 
+def add_web_search(session_id: str, count: int = 1) -> float:
+    """Charge `count` web_search_preview calls against the session ledger."""
+    if count <= 0:
+        return _ledger.get(session_id, 0.0)
+    _ledger[session_id] = _ledger.get(session_id, 0.0) + WEB_SEARCH_USD * count
+    _bucket(session_id)["web_searches"] += count
+    return _ledger[session_id]
+
+
 def tokens(session_id: str) -> dict:
-    t = _tokens.get(session_id, {"prompt": 0, "completion": 0, "calls": 0})
+    t = _tokens.get(session_id,
+                    {"prompt": 0, "completion": 0, "calls": 0, "web_searches": 0})
+    # Older session buckets predating add_web_search() won't have the key —
+    # synthesize zero so callers can rely on it.
+    t = {"web_searches": 0, **t}
     return {**t, "total": t["prompt"] + t["completion"]}
 
 

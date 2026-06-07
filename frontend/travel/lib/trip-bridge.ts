@@ -1,9 +1,11 @@
 import {
   ACTIVE_FORM_COMPONENT,
   ACTIVITY_TYPES,
+  BLOCK_CATEGORIES,
   PACING,
   type ActiveFormComponent,
   type ActivityType,
+  type BlockCategory,
   type CalendarBlock,
   type CopilotUiHooks,
   type FlightOption,
@@ -28,6 +30,8 @@ export interface BackendCalendarBlock {
   type: string;
   /** `[lat, lon]` from the Python side. */
   coordinates: [number, number] | number[];
+  duration_minutes?: number;
+  category?: string;
 }
 
 export interface BackendFlightOption {
@@ -54,6 +58,9 @@ export interface BackendCompiledConstraints {
   pacing: string;
   must_include_tags: string[];
   avoid_tags: string[];
+  must_include_places?: string[];
+  duration_days?: number;
+  start_date?: string;
 }
 
 export interface BackendGroupProfile {
@@ -146,12 +153,25 @@ const flipLatLonToLngLat = (
   return [Number(lon) || 0, Number(lat) || 0];
 };
 
+const toCategory = (raw?: string): BlockCategory | "" => {
+  if (!raw) return "";
+  const normalized = raw.toUpperCase();
+  return (Object.values(BLOCK_CATEGORIES) as string[]).includes(normalized)
+    ? (normalized as BlockCategory)
+    : "";
+};
+
 const toCalendarBlock = (block: BackendCalendarBlock): CalendarBlock => ({
   id: block.id,
   timestamp_start: block.timestamp_start,
   activity_name: block.activity_name,
   type: toActivityType(block.type),
   coordinates: flipLatLonToLngLat(block.coordinates),
+  duration_minutes:
+    typeof block.duration_minutes === "number" && block.duration_minutes > 0
+      ? Math.round(block.duration_minutes)
+      : 90,
+  category: toCategory(block.category),
 });
 
 const toFlightOption = (f: BackendFlightOption): FlightOption => ({
@@ -183,6 +203,9 @@ const toGroupProfile = (profile: BackendGroupProfile): GroupProfile => {
       pacing: toPacing(c.pacing),
       must_include_tags: [...(c.must_include_tags ?? [])],
       avoid_tags: [...(c.avoid_tags ?? [])],
+      must_include_places: [...(c.must_include_places ?? [])],
+      duration_days: Number(c.duration_days) || 0,
+      start_date: c.start_date ?? "",
     },
   };
 };

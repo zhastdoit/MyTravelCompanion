@@ -50,6 +50,8 @@ import {
 import { AuthMenu } from "./auth-menu";
 import { SaveTripButton } from "./save-trip-button";
 import { TripsMenu } from "./trips-menu";
+import { AddToCalendarButton } from "./add-to-calendar-button";
+import { DayFilter } from "./day-filter";
 
 interface DashboardProps {
   /** Stable session id, mirrored as the FastAPI `session_id` and CopilotKit `threadId`. */
@@ -221,6 +223,21 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
     shareDialogRef.current?.open();
   }, []);
 
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // Reset to "all days" when the chosen date is no longer in the itinerary
+  // (e.g. after a reset). Memoizing the date set keeps reactivity cheap.
+  const datesInTrip = useMemo(
+    () =>
+      new Set(
+        itinerary_manifest.calendar_blocks
+          .filter((b) => b.type !== "TRANSIT")
+          .map((b) => b.timestamp_start.slice(0, 10)),
+      ),
+    [itinerary_manifest.calendar_blocks],
+  );
+  const effectiveSelectedDate =
+    selectedDate && datesInTrip.has(selectedDate) ? selectedDate : null;
+
   const isEmpty = itinerary_manifest.origin === "";
 
   return (
@@ -243,6 +260,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                   }
                 />
                 <TripsMenu />
+                <AddToCalendarButton tripState={tripState} />
                 <button
                   type="button"
                   onClick={openShare}
@@ -258,9 +276,6 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
         }
       />
       <div className="flex min-h-0 flex-1">
-        {/* LEFT — the trip "navigation" panel. Collapsible: it pops up with the
-            crew + map + itinerary once a road is planned, and hides on demand.
-            Before any plan exists it shows the onboarding welcome. */}
         {/* LEFT — itinerary list, Google-Maps style. Collapsible; pops up
             once a road is planned and can be hidden to give the map more room. */}
         {!isEmpty && !panelHidden ? (
@@ -291,8 +306,15 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                 onOpen={() => setFlightPickerOpen(true)}
               />
 
+              <DayFilter
+                blocks={itinerary_manifest.calendar_blocks}
+                selectedDate={effectiveSelectedDate}
+                onSelect={setSelectedDate}
+              />
+
               <ItineraryTimeline
                 blocks={itinerary_manifest.calendar_blocks}
+                selectedDate={effectiveSelectedDate ?? undefined}
                 highlightedId={highlightedBlockId}
                 onSelectBlock={setHighlightedBlockId}
               />
@@ -332,6 +354,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
                 <TripMap
                   blocks={itinerary_manifest.calendar_blocks}
                   className="h-full w-full"
+                  selectedDate={effectiveSelectedDate ?? undefined}
                   highlightedId={highlightedBlockId}
                   onSelectBlock={setHighlightedBlockId}
                 />

@@ -28,7 +28,7 @@ def show(title, out):
 
 def main():
     reset(SID)
-    out1 = run_turn(SID, "Plan a relaxed trip from SFO to Tokyo, budget $1500, we love food and history.")
+    out1 = run_turn(SID, "Plan a relaxed 3-day trip from SFO to Tokyo, budget $1500, we love food and history.")
     show("Turn 1 — plan the trip", out1)
 
     out2 = run_turn(SID, "Will the weather mess up our outdoor plans?")
@@ -41,8 +41,15 @@ def main():
     blocks = out2["state"]["itinerary_manifest"]["calendar_blocks"]
     notes = out2["state"]["copilot_ui_hooks"]["system_notifications"]
     assert c["budget_ceiling_usd"] == 1500, "budget not set by Diplomat"
+    assert c["duration_days"] == 3, f"duration_days not extracted: {c['duration_days']}"
     assert out2["state"]["itinerary_manifest"]["destination"] == "Tokyo"
-    assert len(blocks) >= 3, "Logistician did not add itinerary blocks"
+    # 3 days × 3 slots = 9 activity blocks. Plus TRANSIT flight blocks if any.
+    activity_blocks = [b for b in blocks if b["type"] != "TRANSIT"]
+    assert len(activity_blocks) >= 6, (
+        f"Logistician produced too few activity blocks ({len(activity_blocks)})")
+    distinct_dates = {b["timestamp_start"][:10] for b in activity_blocks}
+    assert len(distinct_dates) >= 2, (
+        f"Itinerary should span multiple days, got dates={distinct_dates}")
     assert any("INDOOR" == b["type"] for b in blocks)
     assert notes, "Reshuffler did not push a reroute notification"
     print("\n✅ ALL ASSERTIONS PASSED — full handoff chain works end-to-end.")

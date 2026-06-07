@@ -1,6 +1,7 @@
 import {
   ACTIVE_FORM_COMPONENT,
   ACTIVITY_TYPES,
+  BLOCK_CATEGORIES,
   PACING,
   type TripState,
 } from "@/types/trip";
@@ -14,6 +15,9 @@ export const MOCK_TRIP: TripState = {
       pacing: PACING.RELAXED,
       must_include_tags: ["museums", "local_food", "walkable"],
       avoid_tags: ["nightclubs", "extreme_sports"],
+      must_include_places: [],
+      duration_days: 0,
+      start_date: "",
     },
   },
   group_members: [
@@ -31,6 +35,8 @@ export const MOCK_TRIP: TripState = {
         activity_name: "Eiffel Tower visit",
         type: ACTIVITY_TYPES.OUTDOOR,
         coordinates: [2.2945, 48.8584],
+        duration_minutes: 120,
+        category: BLOCK_CATEGORIES.SIGHT,
       },
       {
         id: "block_002",
@@ -38,6 +44,8 @@ export const MOCK_TRIP: TripState = {
         activity_name: "Lunch at Le Petit Cler",
         type: ACTIVITY_TYPES.INDOOR,
         coordinates: [2.3036, 48.8566],
+        duration_minutes: 90,
+        category: BLOCK_CATEGORIES.MEAL,
       },
       {
         id: "block_003",
@@ -45,6 +53,8 @@ export const MOCK_TRIP: TripState = {
         activity_name: "Seine river walk",
         type: ACTIVITY_TYPES.OUTDOOR,
         coordinates: [2.3376, 48.8566],
+        duration_minutes: 90,
+        category: BLOCK_CATEGORIES.ACTIVITY,
       },
       {
         id: "block_004",
@@ -52,6 +62,8 @@ export const MOCK_TRIP: TripState = {
         activity_name: "Louvre Museum",
         type: ACTIVITY_TYPES.INDOOR,
         coordinates: [2.3376, 48.8606],
+        duration_minutes: 180,
+        category: BLOCK_CATEGORIES.SIGHT,
       },
       {
         id: "block_005",
@@ -59,6 +71,8 @@ export const MOCK_TRIP: TripState = {
         activity_name: "Tuileries Garden picnic",
         type: ACTIVITY_TYPES.OUTDOOR,
         coordinates: [2.3275, 48.8635],
+        duration_minutes: 75,
+        category: BLOCK_CATEGORIES.MEAL,
       },
       {
         id: "block_006",
@@ -66,6 +80,8 @@ export const MOCK_TRIP: TripState = {
         activity_name: "Metro to Montmartre",
         type: ACTIVITY_TYPES.TRANSIT,
         coordinates: [2.3387, 48.8867],
+        duration_minutes: 25,
+        category: BLOCK_CATEGORIES.TRANSIT,
       },
       {
         id: "block_007",
@@ -73,6 +89,8 @@ export const MOCK_TRIP: TripState = {
         activity_name: "Sacré-Cœur Basilica",
         type: ACTIVITY_TYPES.INDOOR,
         coordinates: [2.343, 48.8867],
+        duration_minutes: 60,
+        category: BLOCK_CATEGORIES.SIGHT,
       },
     ],
     flight_options: [],

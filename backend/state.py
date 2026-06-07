@@ -13,6 +13,17 @@ class CompiledConstraints(BaseModel):
     pacing: str = "RELAXED"               # RELAXED | INTENSE
     must_include_tags: list[str] = Field(default_factory=list)
     avoid_tags: list[str] = Field(default_factory=list)
+    # Specific named places the user explicitly asked for ("the Louvre",
+    # "Eiffel Tower"). Distinct from must_include_tags (categories) — the
+    # Logistician MUST schedule a calendar_block for each entry here.
+    must_include_places: list[str] = Field(default_factory=list)
+    # Trip length in calendar days. 0 means "not yet set" — the Diplomat must
+    # extract or ask. The Logistician uses this to distribute calendar_blocks
+    # across distinct days.
+    duration_days: int = 0
+    # ISO-8601 date (YYYY-MM-DD). Empty -> Logistician defaults to today + 30
+    # days when computing per-block timestamps.
+    start_date: str = ""
 
 
 class GroupProfile(BaseModel):
@@ -25,6 +36,14 @@ class CalendarBlock(BaseModel):
     activity_name: str
     type: str = "INDOOR"                   # OUTDOOR | INDOOR | TRANSIT
     coordinates: list[float] = Field(default_factory=list)   # [lat, lon]
+    # Approximate length of the activity in minutes. The frontend renders
+    # `start – end` from this; the Logistician sets it per slot (~60 for
+    # coffee, ~90 for meals, ~120 for sights/activities).
+    duration_minutes: int = 90
+    # Free-text category hint for the UI to choose icons/labels. Suggested
+    # values: "MEAL" | "SIGHT" | "ACTIVITY" | "REST" | "TRANSIT" | "NIGHTLIFE"
+    # Empty string is fine — the timeline falls back to `type` styling.
+    category: str = ""
 
 
 class FlightOption(BaseModel):

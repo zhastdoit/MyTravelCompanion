@@ -8,7 +8,8 @@ cachetools>=5.3     # tiny TTL cache for upstream calls
 PyJWT[crypto]>=2.8  # verify Supabase user JWTs (HS256 + ES256/RS256 via JWKS)
 
 # Real LLM mode (USE_MOCK_LLM=0)
-openai>=1.40
+# >=1.51 required for client.responses.create + web_search_preview tool
+openai>=1.51
 
 # Optional infra — code degrades gracefully if absent
 redis>=5            # HOT TripState store (else in-memory fallback)
