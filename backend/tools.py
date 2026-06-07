@@ -110,6 +110,18 @@ def _to_iata(s: str) -> str | None:
     return _IATA.get(s.lower())
 
 
+def _same_place(a: str, b: str) -> bool:
+    """True when origin and destination are effectively the same city — the
+    traveler is already there, so no flight is needed."""
+    na, nb = (a or "").strip().lower(), (b or "").strip().lower()
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    ia, ib = _to_iata(a), _to_iata(b)
+    return bool(ia) and ia == ib
+
+
 def _fmt_dur(mins) -> str:
     if not mins:
         return ""
@@ -159,6 +171,16 @@ def query_amadeus(state: TripState, *, origin: str = "", destination: str = "") 
     the UI has something to render."""
     o = origin or state.itinerary_manifest.origin or "SFO"
     d = destination or state.itinerary_manifest.destination or "Tokyo"
+
+    # Already there — a local trip needs no flight. Clear any stale options and
+    # don't surface the FLIGHT_PICKER form.
+    if _same_place(o, d):
+        state.itinerary_manifest.flight_options = []
+        if state.copilot_ui_hooks.active_form_component == "FLIGHT_PICKER":
+            state.copilot_ui_hooks.active_form_component = "NONE"
+        return (f"[Flights] Origin and destination are both {o} — you're "
+                f"already there, so no flight is needed.")
+
     dep, arr = _to_iata(o), _to_iata(d)
 
     if _mock_externals() or not dep or not arr:
