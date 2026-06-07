@@ -1,7 +1,7 @@
 "use client";
 
+import Image from "next/image";
 import { ArrowRight, MapPin } from "lucide-react";
-import { BrandMark } from "./brand-mark";
 
 interface OnboardingCardProps {
   onPrompt: (prompt: string) => void;
@@ -29,9 +29,14 @@ export const OnboardingCard = ({ onPrompt }: OnboardingCardProps) => (
   <div className="flex h-full flex-col items-center justify-center px-4 py-12">
     <div className="w-full max-w-xl rounded-md border border-border bg-surface p-6">
       <div className="flex items-center gap-2">
-        <span className="grid size-8 place-items-center rounded-sm bg-primary text-primary-foreground">
-          <BrandMark className="size-5" />
-        </span>
+        <Image
+          src="/agent-avatars/logistician.png"
+          alt="My Travel Companion"
+          width={32}
+          height={32}
+          className="size-8 rounded-sm object-cover"
+          priority
+        />
         <div>
           <h1 className="text-base font-semibold leading-tight">
             Where to next?
