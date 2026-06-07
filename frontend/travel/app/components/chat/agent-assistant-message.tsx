@@ -36,6 +36,12 @@ const resolveAgentFromContent = (content: string): AgentId | null => {
   return null;
 };
 
+// The body text leads with the same `**<emoji> <name>** — ` prefix we use to
+// resolve the speaker. Once the agent header (icon + name + role) is shown, that
+// prefix is redundant, so strip it from the rendered body.
+const stripAgentPrefix = (content: string): string =>
+  content.replace(/^\s*\*\*[^*]+\*\*\s*[—–-]\s*/, "");
+
 export const AgentAssistantMessage = (props: AssistantMessageProps) => {
   const { bindMessage } = useAgentSpeaker();
   const fallbackMessageId = useId();
@@ -56,6 +62,19 @@ export const AgentAssistantMessage = (props: AssistantMessageProps) => {
   if (!boundAgent) return <DefaultAssistantMessage {...props} />;
 
   const agent = AGENTS[boundAgent];
+
+  // Drop the redundant "**emoji name** —" prefix from the body; the header
+  // above already identifies the speaker.
+  const bodyProps =
+    typeof props.message?.content === "string"
+      ? {
+          ...props,
+          message: {
+            ...props.message,
+            content: stripAgentPrefix(props.message.content),
+          },
+        }
+      : props;
 
   return (
     <div className="copilotKitAssistantMessage relative pl-3">
@@ -81,7 +100,7 @@ export const AgentAssistantMessage = (props: AssistantMessageProps) => {
           <AgentIntroCard agentId={agent.id} />
         </div>
       </div>
-      <DefaultAssistantMessage {...props} />
+      <DefaultAssistantMessage {...bodyProps} />
     </div>
   );
 };
