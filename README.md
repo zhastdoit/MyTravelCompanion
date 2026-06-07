@@ -42,6 +42,7 @@ Browser (Next.js + CopilotKit)  ──►  CopilotRuntime gateway  ──►  Fa
 - ✅ **Live weather reroute** — outdoor → indoor swap with a notification
 - ✅ **`@`-mention routing** — address any agent directly
 - ✅ **Per-agent chat lines** (`chat[]`) — the crew "talks" on screen as it works
+- ✅ **Live flights** — real **SerpApi / Google Flights** results (price, stops, duration, airline), with mock fallback
 - ✅ **Structured form data** — `flight_options` with **booking links** + `form_payload` for CopilotKit forms; `POST /api/select` records the choice
 - ✅ **$1 / session spend cap** + per-turn **token tracking**
 - ✅ **Loop guards** — caps + ping-pong detection; falls back to *"&lt;name&gt;, what do you think?"*
@@ -74,6 +75,7 @@ More backend detail: [`backend/README.md`](backend/README.md).
 ## Roadmap
 
 - [ ] Frontend renders `form_payload` forms + selection (ryw)
-- [ ] Swap mock tools for real APIs (OpenWeather first — free & live; then Amadeus/Geoapify)
+- [x] Real flights via SerpApi (Google Flights)
+- [ ] Real weather (OpenWeather) + attractions (Geoapify) — same keyed-gated + fallback pattern
 - [ ] Weave eval metrics (JSON adherence, routing latency, API resiliency)
 - [ ] Supabase cold-storage "Save Trip"
