@@ -63,7 +63,7 @@ export const TripsMenu = () => {
       {open ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
           <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/30"
             onClick={() => setOpen(false)}
             aria-hidden
           />
