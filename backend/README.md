@@ -41,7 +41,8 @@ curl -s localhost:8000/api/chat -H 'content-type: application/json' \
 | `orchestrator.py` | The handoff engine (mock + real OpenAI), `run_turn()` |
 | `obs.py` | Weave `@op` shim (optional) |
 | `main.py` | FastAPI endpoints (`/api/chat`, `/api/state`, `/health`) |
-| `test_pipe.py` | End-to-end smoke test |
+| `test_pipe.py` | End-to-end smoke test (in-process) |
+| `test_http.py` | FastAPI `TestClient` smokes for the HTTP surface (run with `pytest`) |
 
 ## Endpoints
 
@@ -50,9 +51,47 @@ curl -s localhost:8000/api/chat -H 'content-type: application/json' \
 - `POST /api/reset/{sid}` → clear conversation
 - `GET /health` → mode + store backend
 
-## Integration seam (do with ryw)
+## Integration with the Next.js frontend
 
-Bridging CopilotKit's shared-state generative UI to this OpenAI-native backend is the
-part to de-risk first. The `trail` + `state.copilot_ui_hooks.active_form_component`
-(`GROUP_AGREEMENT` / `FLIGHT_PICKER`) tell the UI what to render. CopilotKit mount stub
-is in `main.py`.
+The Next.js app at `frontend/travel/` is a **gateway**: CopilotKit chat calls flow
+through a `FastApiServiceAdapter` into `POST /api/chat` here, and a pair of thin
+Next.js route handlers proxy state reads/resets:
+
+| Frontend route | Forwards to |
+|----------------|-------------|
+| `POST /api/copilotkit` (CopilotKit chat) | `POST /api/chat` |
+| `GET  /api/trip/{sid}/state` | `GET  /api/state/{sid}` |
+| `POST /api/trip/{sid}/reset` | `POST /api/reset/{sid}` |
+
+The frontend `sessionId` (from the URL `/trip/{sid}`) is plumbed as both the
+CopilotKit `threadId` and the backend `session_id`, keeping transcripts coherent
+across reloads. After every chat turn the frontend re-fetches `/api/state/{sid}`
+and bridges the payload (coordinate-flip from `[lat, lon]` → Mapbox
+`[lng, lat]`) into its `TripState`.
+
+Generative UI cues come from `state.copilot_ui_hooks.active_form_component`
+(`GROUP_AGREEMENT` / `FLIGHT_PICKER`) — the dashboard renders a Diplomat or
+Logistician card inline beside the itinerary when set. `system_notifications`
+drives the toast strip.
+
+### Run the full stack locally
+
+```bash
+# terminal 1 — backend
+cd backend
+source .venv/bin/activate
+USE_MOCK_LLM=1 uvicorn main:app --reload --port 8000
+
+# terminal 2 — frontend
+cd frontend/travel
+BACKEND_URL=http://localhost:8000 npm run dev
+
+# end-to-end smoke (boots both, runs a real /api/chat, tears down)
+bash scripts/smoke.sh
+```
+
+| Env var | Where | Default |
+|---------|-------|---------|
+| `BACKEND_URL` | frontend (server-side) | `http://localhost:8000` |
+| `ALLOWED_ORIGIN` | backend (CORS) | `http://localhost:3000` |
+| `USE_MOCK_LLM` | backend | `1` (deterministic, no key required) |

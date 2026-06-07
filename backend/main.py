@@ -14,6 +14,7 @@ OpenAI-native backend is the part to de-risk with ryw — see DESIGN.md. A stub
 `/copilotkit` mount is left below.
 """
 from __future__ import annotations
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")  # must run before local imports read env
@@ -26,9 +27,16 @@ from store import load_state, BACKEND
 from orchestrator import run_turn, reset, USE_MOCK_LLM
 import cost
 
+# CORS: ALLOWED_ORIGIN may be a comma-separated list, "*" for any (dev only),
+# or unset/empty -> default to the Next.js dev gateway.
+_raw_origins = os.getenv("ALLOWED_ORIGIN", "http://localhost:3000")
+_allow_origins = ["*"] if _raw_origins.strip() == "*" else [
+    o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app = FastAPI(title="SyncTrip Agent Server")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    CORSMiddleware, allow_origins=_allow_origins,
+    allow_methods=["*"], allow_headers=["*"])
 
 
 class ChatIn(BaseModel):
