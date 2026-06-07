@@ -1,0 +1,44 @@
+name: Nightly evals (real LLM)
+
+on:
+  schedule:
+    # 09:00 UTC ≈ 02:00 PT — early enough that engineers see results before standup.
+    - cron: "0 9 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  evals:
+    name: Real-LLM scenarios
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner != '' }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      USE_MOCK_LLM: "0"
+      MOCK_EXTERNAL_APIS: "1"   # leave externals mocked to keep the cost predictable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+      - name: Guard: skip when OPENAI_API_KEY missing
+        if: ${{ env.OPENAI_API_KEY == '' }}
+        run: |
+          echo "::warning::OPENAI_API_KEY not set; nightly real-LLM evals skipped."
+          exit 0
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run real-LLM evals
+        run: python -m evals.run --real --report eval-report.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-real
+          path: backend/eval-report.md
+          if-no-files-found: warn
