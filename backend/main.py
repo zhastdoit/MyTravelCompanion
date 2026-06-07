@@ -43,6 +43,7 @@ class ChatIn(BaseModel):
     session_id: str
     message: str
     user_auth_id: str = ""
+    user_name: str = ""        # used to address the user when the crew turns to them
 
 
 @app.get("/health")
@@ -60,7 +61,7 @@ def get_cost(sid: str):
 
 @app.post("/api/chat")
 def chat(body: ChatIn):
-    return run_turn(body.session_id, body.message, body.user_auth_id)
+    return run_turn(body.session_id, body.message, body.user_auth_id, body.user_name)
 
 
 @app.get("/api/state/{sid}")

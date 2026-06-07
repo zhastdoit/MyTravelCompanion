@@ -24,6 +24,7 @@ _FALLBACK = (5.00, 15.00)   # conservative: over-estimate unknown models
 
 CAP = float(os.getenv("SESSION_USD_CAP", "1.0"))
 _ledger: dict[str, float] = {}
+_tokens: dict[str, dict] = {}     # session_id -> {prompt, completion, calls}
 
 
 def price_of(model: str) -> tuple[float, float]:
@@ -34,7 +35,16 @@ def add_usage(session_id: str, model: str, prompt_tokens: int, completion_tokens
     pin, pout = price_of(model)
     cost = (prompt_tokens / 1e6) * pin + (completion_tokens / 1e6) * pout
     _ledger[session_id] = _ledger.get(session_id, 0.0) + cost
+    t = _tokens.setdefault(session_id, {"prompt": 0, "completion": 0, "calls": 0})
+    t["prompt"] += prompt_tokens
+    t["completion"] += completion_tokens
+    t["calls"] += 1
     return _ledger[session_id]
+
+
+def tokens(session_id: str) -> dict:
+    t = _tokens.get(session_id, {"prompt": 0, "completion": 0, "calls": 0})
+    return {**t, "total": t["prompt"] + t["completion"]}
 
 
 def spent(session_id: str) -> float:
@@ -51,3 +61,4 @@ def remaining(session_id: str) -> float:
 
 def reset(session_id: str) -> None:
     _ledger.pop(session_id, None)
+    _tokens.pop(session_id, None)

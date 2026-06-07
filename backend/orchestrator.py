@@ -19,7 +19,8 @@ from obs import op
 import cost
 
 USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "1") == "1"
-MAX_STEPS = 12
+MAX_STEPS = 12          # hard ceiling on handoffs+tools per turn
+LOOP_LIMIT = 4          # consecutive handoffs with no productive work => spinning
 _transcripts: dict[str, list[dict]] = {}
 
 # A user can directly address an agent with @name (case-insensitive). Aliases included.
@@ -166,7 +167,8 @@ def _decide(active, state, executed, transcript, session_id) -> Decision:
 # ------------------------------- main loop ---------------------------------
 
 @op(name="run_turn")
-def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict:
+def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
+             user_name: str = "") -> dict:
     state = load_state(session_id, user_auth_id)
     transcript = _transcripts.setdefault(session_id, [])
     transcript.append({"role": "user", "content": user_message})
@@ -177,6 +179,8 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict
     if entry != ENTRY_AGENT:
         trail.append({"agent": "user", "action": f"@{entry} (direct)"})
     reply, final_agent = "", active
+    transfers_since_work = 0          # productive work resets this; pure handoffs grow it
+    tok_before = cost.tokens(session_id)
 
     for _ in range(MAX_STEPS):
         if not USE_MOCK_LLM and cost.over_cap(session_id):
@@ -189,10 +193,26 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict
         if d.kind == "transfer":
             trail.append({"agent": active, "action": f"→ {d.target}"})
             active = d.target
+            transfers_since_work += 1
+            if transfers_since_work >= LOOP_LIMIT:   # agents ping-ponging with no progress
+                trail.append({"agent": active, "action": "loop-detected"})
+                break
             continue
         if d.kind == "tool":
+            if d.tool in executed:                 # model repeating a tool — nudge it forward
+                note = (f"You already called {d.tool} this turn (result unchanged). "
+                        f"Call a DIFFERENT tool or transfer_to_supervisor now.")
+                if not USE_MOCK_LLM:
+                    transcript.append({"role": "tool", "tool_call_id": d.content, "content": note})
+                transfers_since_work += 1
+                trail.append({"agent": active, "action": f"skip:{d.tool} (repeat)"})
+                if transfers_since_work >= LOOP_LIMIT:
+                    trail.append({"agent": active, "action": "loop-detected"})
+                    break
+                continue
             result = WORK_TOOLS[d.tool](state, **(d.args or {}))
             executed.add(d.tool)
+            transfers_since_work = 0
             if USE_MOCK_LLM:
                 transcript.append({"role": "assistant",
                                    "content": f"[{active}:{d.tool}] {result}"})
@@ -209,6 +229,14 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict
         trail.append({"agent": active, "action": "reply", "result": reply})
         break
 
+    # Fallback: the crew couldn't converge (hit MAX_STEPS or a handoff loop) — turn to the human.
+    if not reply:
+        name = (user_name or "").strip()
+        reply = f"{name}, what do you think?" if name else "What do you think — how should we proceed?"
+        final_agent = active
+        transcript.append({"role": "assistant", "content": reply})
+        trail.append({"agent": active, "action": "ask_user", "result": reply})
+
     save_state(state)
     return {
         "session_id": session_id,
@@ -221,6 +249,9 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "") -> dict
         "entry_agent": entry,
         "usd_spent": cost.spent(session_id),
         "usd_cap": cost.CAP,
+        "tokens_turn": {k: cost.tokens(session_id)[k] - tok_before[k]
+                        for k in ("prompt", "completion", "calls", "total")},
+        "tokens_session": cost.tokens(session_id),
     }
 
 
