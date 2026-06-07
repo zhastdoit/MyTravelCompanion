@@ -89,6 +89,9 @@ body {
   padding: 0;
   margin: 0;
   max-width: 100%;
+  /* static so the action bar anchors to .mtcBubble (below the whole bubble,
+   * incl. any generative card) instead of overlapping the card. */
+  position: static;
 }
 .mtcBubble .copilotKitMessage.copilotKitAssistantMessage p:last-child {
   margin-bottom: 0;
