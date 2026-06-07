@@ -42,7 +42,31 @@ const trimTrailingSlash = (url: string): string =>
 interface ReplyResult {
   lines: BackendChatLine[];
   isError: boolean;
+  /**
+   * A generative-UI form the backend wants rendered inline in the chat. Mapped
+   * to a CopilotKit action (`useCopilotAction`) the frontend registers; we emit
+   * it as an AGUI tool call so CopilotKit renders the action's UI in-stream.
+   */
+  form?: { name: string; args: Record<string, unknown> } | null;
 }
+
+/** Detect a form the backend wants surfaced from its returned TripState. */
+const detectForm = (data: BackendChatResponse): ReplyResult["form"] => {
+  const hooks = data.state?.copilot_ui_hooks;
+  const c = data.state?.group_profile?.compiled_constraints;
+  if (hooks?.active_form_component === "GROUP_AGREEMENT" && c) {
+    return {
+      name: "group_agreement",
+      args: {
+        budget_ceiling_usd: c.budget_ceiling_usd,
+        pacing: c.pacing,
+        must_include_tags: c.must_include_tags ?? [],
+        avoid_tags: c.avoid_tags ?? [],
+      },
+    };
+  }
+  return null;
+};
 
 /** Format a per-agent chat line as a markdown bubble for the chat UI. */
 const formatChatLine = (line: BackendChatLine): string =>
@@ -98,7 +122,15 @@ export class FastApiAgent extends AbstractAgent {
   run(input: RunAgentInput): Observable<BaseEvent> {
     return new Observable<BaseEvent>((subscriber) => {
       const sessionId = input.threadId;
-      const userMessage = pickLatestUserText(input.messages);
+      // A trailing tool result (a generative-UI form submission via respond())
+      // carries the encoded message; otherwise use the latest user text.
+      const lastMsg = input.messages[input.messages.length - 1] as
+        | { role?: string; content?: unknown }
+        | undefined;
+      const userMessage =
+        lastMsg?.role === "tool"
+          ? flattenContent(lastMsg.content)
+          : pickLatestUserText(input.messages);
 
       const cancelled = { current: false };
 
@@ -110,7 +142,7 @@ export class FastApiAgent extends AbstractAgent {
             runId: input.runId,
           });
 
-          const { lines, isError } = await this.requestReply(
+          const { lines, isError, form } = await this.requestReply(
             sessionId,
             userMessage,
           );
@@ -145,6 +177,43 @@ export class FastApiAgent extends AbstractAgent {
             subscriber.next({
               type: EventType.TEXT_MESSAGE_END,
               messageId,
+            });
+          }
+
+          // Surface a generative-UI form as an AGUI tool call so CopilotKit
+          // renders the registered action inline in the chat. Attach it to a
+          // short assistant message that introduces the card.
+          if (form && !isError && !cancelled.current) {
+            const parentMessageId = randomUUID();
+            const toolCallId = randomUUID();
+            subscriber.next({
+              type: EventType.TEXT_MESSAGE_START,
+              messageId: parentMessageId,
+              role: "assistant",
+            });
+            subscriber.next({
+              type: EventType.TEXT_MESSAGE_CONTENT,
+              messageId: parentMessageId,
+              delta: "Here's the group's plan — confirm or tweak it below 👇",
+            });
+            subscriber.next({
+              type: EventType.TEXT_MESSAGE_END,
+              messageId: parentMessageId,
+            });
+            subscriber.next({
+              type: EventType.TOOL_CALL_START,
+              toolCallId,
+              toolCallName: form.name,
+              parentMessageId,
+            });
+            subscriber.next({
+              type: EventType.TOOL_CALL_ARGS,
+              toolCallId,
+              delta: JSON.stringify(form.args),
+            });
+            subscriber.next({
+              type: EventType.TOOL_CALL_END,
+              toolCallId,
             });
           }
 
@@ -216,11 +285,12 @@ export class FastApiAgent extends AbstractAgent {
     // Prefer the structured `chat[]` payload so each agent gets its own
     // bubble; fall back to the legacy single-line `reply` for older
     // backends or if the orchestrator returned no chat events.
+    const form = detectForm(data);
     const lines = (data.chat ?? []).filter((l) => l.text?.trim().length > 0);
     if (lines.length > 0) {
-      return { lines, isError: false };
+      return { lines, isError: false, form };
     }
-    return singleLineResult(data.reply ?? "", false);
+    return { ...singleLineResult(data.reply ?? "", false), form };
   }
 }
 

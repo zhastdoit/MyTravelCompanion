@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen, Share2, X } from "lucide-react";
-import { useCopilotChat } from "@copilotkit/react-core";
+import { PanelLeftClose, PanelLeftOpen, Share2 } from "lucide-react";
+import { useCopilotAction, useCopilotChat } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import {
@@ -38,10 +38,8 @@ import { OnboardingCard } from "./onboarding-card";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { FlightPickerModal } from "./generative/flight-picker-modal";
 import { FlightsSummaryCard } from "./generative/flights-summary-card";
-import {
-  GroupAgreementForm,
-  type GroupAgreementResult,
-} from "./generative/group-agreement-form";
+import { GroupAgreementChatCard } from "./generative/group-agreement-chat-card";
+import type { GroupAgreementResult } from "./generative/group-agreement-form";
 import type { FlightCheckoutResult } from "./generative/flight-checkout-card";
 import {
   encodeFlightCheckoutMessage,
@@ -99,11 +97,6 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
   // active_form, which a re-fetch would otherwise revert).
   const [flightPickerOpen, setFlightPickerOpen] = useState(false);
 
-  // The group-agreement form pops up inside the chat (agent dialog). Local
-  // open-state so it can be dismissed and reopened independently of the
-  // backend's active_form.
-  const [groupAgreementOpen, setGroupAgreementOpen] = useState(false);
-
   const handleBackendState = useCallback(
     (next: Parameters<typeof toFrontendTripState>[0]) => {
       setTripState((prev) => toFrontendTripState(next, prev));
@@ -127,8 +120,6 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
   useEffect(() => {
     if (activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER) {
       setFlightPickerOpen(true);
-    } else if (activeForm === ACTIVE_FORM_COMPONENT.GROUP_AGREEMENT) {
-      setGroupAgreementOpen(true);
     }
   }, [activeForm]);
 
@@ -161,10 +152,29 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
     (result: GroupAgreementResult) => {
       sendUserMessage(encodeGroupAgreementMessage(result));
       dismissActiveForm();
-      setGroupAgreementOpen(false);
     },
     [sendUserMessage, dismissActiveForm],
   );
+
+  // Generative UI: the FastApiAgent emits a `group_agreement` tool call when the
+  // Diplomat compiles constraints; CopilotKit renders this card inline in the
+  // chat. Submitting reuses the normal encoded-message flow.
+  useCopilotAction({
+    name: "group_agreement",
+    description: "Confirm or adjust the group's compiled trip constraints.",
+    parameters: [
+      { name: "budget_ceiling_usd", type: "number" },
+      { name: "pacing", type: "string" },
+      { name: "must_include_tags", type: "string[]" },
+      { name: "avoid_tags", type: "string[]" },
+    ],
+    render: ({ args }) => (
+      <GroupAgreementChatCard
+        args={args as Record<string, unknown>}
+        onRespond={handleGroupAgreement}
+      />
+    ),
+  });
 
   const handleFlightCheckout = useCallback(
     (result: FlightCheckoutResult) => {
@@ -326,37 +336,6 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
             }}
             AssistantMessage={AgentAssistantMessage}
           />
-
-          {/* Group-agreement form — pops up inside the agent dialog (over the
-              chat) when the Diplomat compiles the group's constraints. */}
-          {groupAgreementOpen ? (
-            <div className="absolute inset-0 z-20 flex items-center justify-center p-4">
-              <div
-                className="absolute inset-0 bg-black/20"
-                onClick={() => setGroupAgreementOpen(false)}
-                aria-hidden
-              />
-              <div className="relative z-10 w-full max-w-sm">
-                <button
-                  type="button"
-                  onClick={() => setGroupAgreementOpen(false)}
-                  aria-label="Dismiss"
-                  className="absolute right-2 top-2 z-10 inline-flex size-6 items-center justify-center rounded-sm text-muted transition hover:bg-muted-surface hover:text-foreground"
-                >
-                  <X className="size-3.5" aria-hidden />
-                </button>
-                <GroupAgreementForm
-                  proposedBudgetUsd={group_profile.compiled_constraints.budget_ceiling_usd}
-                  proposedPacing={group_profile.compiled_constraints.pacing}
-                  proposedMustIncludeTags={group_profile.compiled_constraints.must_include_tags}
-                  proposedAvoidTags={group_profile.compiled_constraints.avoid_tags}
-                  rationale="Diplomat compiled these constraints from the group's last exchange. Approve to lock them in."
-                  status="executing"
-                  onRespond={handleGroupAgreement}
-                />
-              </div>
-            </div>
-          ) : null}
 
           {/* Flight picker — also pops up inside the agent dialog. The user can
               compare options and book, or skip for now. */}
