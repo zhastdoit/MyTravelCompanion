@@ -63,3 +63,14 @@ body {
     border-color: var(--border);
   }
 }
+
+/*
+ * Permanent docked conversation: make the standalone CopilotChat fill its
+ * right-hand column so the message list scrolls internally and the composer
+ * stays pinned to the bottom.
+ */
+.copilotKitChat {
+  height: 100%;
+  min-height: 0;
+  background: transparent;
+}

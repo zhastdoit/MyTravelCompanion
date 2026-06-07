@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
-import { Share2 } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen, Share2 } from "lucide-react";
 import { useCopilotChat } from "@copilotkit/react-core";
-import { CopilotSidebar } from "@copilotkit/react-ui";
+import { CopilotChat } from "@copilotkit/react-ui";
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import {
   AgentSpeakerProvider,
@@ -45,6 +45,7 @@ import {
 } from "@/lib/form-message";
 import { AuthMenu } from "./auth-menu";
 import { SaveTripButton } from "./save-trip-button";
+import { cn } from "@/lib/utils";
 
 interface DashboardProps {
   /** Stable session id, mirrored as the FastAPI `session_id` and CopilotKit `threadId`. */
@@ -78,6 +79,10 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
   });
   const { appendMessage } = useCopilotChat();
   const { setCurrentAgent } = useAgentSpeaker();
+
+  // The left trip panel is collapsible — it pops up once a road is planned,
+  // and the user can hide it to give the conversation the full width.
+  const [panelHidden, setPanelHidden] = useState(false);
 
   const handleBackendState = useCallback(
     (next: Parameters<typeof toFrontendTripState>[0]) => {
@@ -151,7 +156,7 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
   const isEmpty = itinerary_manifest.origin === "";
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       <Header
         itinerary={itinerary_manifest}
         groupProfile={group_profile}
@@ -183,77 +188,124 @@ const DashboardContent = ({ sessionId, userAuthId, groupMembers }: DashboardProp
           </>
         }
       />
-      <AgentCrew status={agentStatus} />
-
-      <main className="flex flex-1 flex-col gap-4 px-5 py-4 lg:gap-5">
-        {isEmpty ? (
-          <OnboardingCard
-            onPrompt={(prompt) =>
-              void appendMessage(
-                new TextMessage({ role: Role.User, content: prompt }),
-              )
-            }
-          />
-        ) : (
-          <div className="flex flex-1 flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5">
-            <section className="min-h-[420px] lg:min-h-0">
-              <TripMap blocks={itinerary_manifest.calendar_blocks} className="h-full" />
-            </section>
-
-            <aside className="flex min-w-0 flex-col gap-4">
-              {activeForm === ACTIVE_FORM_COMPONENT.GROUP_AGREEMENT ? (
-                <GroupAgreementForm
-                  proposedBudgetUsd={group_profile.compiled_constraints.budget_ceiling_usd}
-                  proposedPacing={group_profile.compiled_constraints.pacing}
-                  proposedMustIncludeTags={group_profile.compiled_constraints.must_include_tags}
-                  proposedAvoidTags={group_profile.compiled_constraints.avoid_tags}
-                  rationale="Diplomat compiled these constraints from the group's last exchange. Approve to lock them in."
-                  status="executing"
-                  onRespond={handleGroupAgreement}
+      <div className="flex min-h-0 flex-1">
+        {/* LEFT — the trip "navigation" panel. Collapsible: it pops up with the
+            crew + map + itinerary once a road is planned, and hides on demand.
+            Before any plan exists it shows the onboarding welcome. */}
+        {!panelHidden ? (
+          <div className="flex min-w-0 flex-1 flex-col border-r border-border">
+            {!isEmpty ? (
+              <div className="flex items-stretch border-b border-border bg-muted-surface/40">
+                <AgentCrew
+                  status={agentStatus}
+                  className="min-w-0 flex-1 border-0 bg-transparent"
                 />
-              ) : null}
-
-              {activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER ? (
-                <FlightCheckoutCard
-                  airline={flightStub.airline}
-                  flightNumber={flightStub.flightNumber}
-                  origin={flightStub.origin}
-                  destination={flightStub.destination}
-                  departure={flightStub.departure}
-                  arrival={flightStub.arrival}
-                  durationMinutes={flightStub.durationMinutes}
-                  priceUsd={flightStub.priceUsd}
-                  status="complete"
-                  onConfirm={handleFlightCheckout}
-                />
-              ) : null}
-
-              <div className="rounded-md border border-border bg-surface p-3">
-                <div className="mb-2.5 flex items-baseline justify-between border-b border-border pb-2">
-                  <h2 className="text-sm font-semibold uppercase tracking-wider">
-                    Itinerary
-                  </h2>
-                  <span className="font-mono text-[11px] text-muted tabular-nums">
-                    {itinerary_manifest.calendar_blocks.length} blocks
-                  </span>
-                </div>
-                <ItineraryTimeline blocks={itinerary_manifest.calendar_blocks} />
+                <button
+                  type="button"
+                  onClick={() => setPanelHidden(true)}
+                  title="Hide trip panel"
+                  className="inline-flex shrink-0 items-center gap-1 border-l border-border px-3 text-[11px] font-medium text-muted transition hover:bg-surface hover:text-primary"
+                >
+                  <PanelLeftClose className="size-3.5" aria-hidden />
+                  Hide
+                </button>
               </div>
-            </aside>
-          </div>
-        )}
-      </main>
+            ) : null}
 
-      <CopilotSidebar
-        defaultOpen
-        clickOutsideToClose={false}
-        labels={{
-          title: "My Travel Companion Crew",
-          initial:
-            "Hey! I'm your travel crew. Ask: 'Plan a relaxed 3-day trip from JFK to Paris under $1500.'",
-        }}
-        AssistantMessage={AgentAssistantMessage}
-      />
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {isEmpty ? (
+                <OnboardingCard
+                  onPrompt={(prompt) =>
+                    void appendMessage(
+                      new TextMessage({ role: Role.User, content: prompt }),
+                    )
+                  }
+                />
+              ) : (
+                <div className="flex flex-col gap-4 lg:gap-5">
+                  {activeForm === ACTIVE_FORM_COMPONENT.GROUP_AGREEMENT ? (
+                    <GroupAgreementForm
+                      proposedBudgetUsd={group_profile.compiled_constraints.budget_ceiling_usd}
+                      proposedPacing={group_profile.compiled_constraints.pacing}
+                      proposedMustIncludeTags={group_profile.compiled_constraints.must_include_tags}
+                      proposedAvoidTags={group_profile.compiled_constraints.avoid_tags}
+                      rationale="Diplomat compiled these constraints from the group's last exchange. Approve to lock them in."
+                      status="executing"
+                      onRespond={handleGroupAgreement}
+                    />
+                  ) : null}
+
+                  {activeForm === ACTIVE_FORM_COMPONENT.FLIGHT_PICKER ? (
+                    <FlightCheckoutCard
+                      airline={flightStub.airline}
+                      flightNumber={flightStub.flightNumber}
+                      origin={flightStub.origin}
+                      destination={flightStub.destination}
+                      departure={flightStub.departure}
+                      arrival={flightStub.arrival}
+                      durationMinutes={flightStub.durationMinutes}
+                      priceUsd={flightStub.priceUsd}
+                      status="complete"
+                      onConfirm={handleFlightCheckout}
+                    />
+                  ) : null}
+
+                  <section className="min-h-[340px]">
+                    <TripMap
+                      blocks={itinerary_manifest.calendar_blocks}
+                      className="h-[46vh] min-h-[340px] w-full"
+                    />
+                  </section>
+
+                  <div className="rounded-md border border-border bg-surface p-3">
+                    <div className="mb-2.5 flex items-baseline justify-between border-b border-border pb-2">
+                      <h2 className="text-sm font-semibold uppercase tracking-wider">
+                        Itinerary
+                      </h2>
+                      <span className="font-mono text-[11px] text-muted tabular-nums">
+                        {itinerary_manifest.calendar_blocks.length} blocks
+                      </span>
+                    </div>
+                    <ItineraryTimeline blocks={itinerary_manifest.calendar_blocks} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* RIGHT — the conversation. Permanent, docked: this is the hero
+            feature (talking with friends + agents). Expands to full width
+            when the trip panel is hidden. */}
+        <div
+          className={cn(
+            "relative flex min-w-0 flex-col bg-surface",
+            panelHidden ? "flex-1" : "w-full lg:w-[32rem] xl:w-[38rem]",
+          )}
+        >
+          {!isEmpty && panelHidden ? (
+            <button
+              type="button"
+              onClick={() => setPanelHidden(false)}
+              title="Show trip panel"
+              className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 text-[11px] font-medium text-muted shadow-sm transition hover:text-primary"
+            >
+              <PanelLeftOpen className="size-3.5" aria-hidden />
+              Show trip
+            </button>
+          ) : null}
+
+          <CopilotChat
+            className="flex h-full min-h-0 flex-col"
+            labels={{
+              title: "My Travel Companion Crew",
+              initial:
+                "Hey! I'm your travel crew. Ask: 'Plan a relaxed 3-day trip from JFK to Paris under $1500.'",
+            }}
+            AssistantMessage={AgentAssistantMessage}
+          />
+        </div>
+      </div>
 
       {sessionId ? (
         <ShareDialog ref={shareDialogRef} sessionId={sessionId} />
