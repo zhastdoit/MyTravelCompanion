@@ -10,8 +10,12 @@ returns an empty / not-saved result so the rest of the server keeps working
 in offline mode.
 """
 from __future__ import annotations
+import datetime as _dt
+import json
 import logging
 import os
+import uuid
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -19,6 +23,44 @@ log = logging.getLogger(__name__)
 _TABLE = "trips"
 _client = None
 _initialized = False
+
+# Local fallback store: when Supabase isn't configured, persist saved trips to a
+# JSON file so save / rename / switch still work in dev. Keyed by user_auth_id
+# (the Supabase `sub`). Supabase transparently takes over when configured.
+_LOCAL_PATH = Path(__file__).with_name(".local_trips.json")
+
+
+def _now_iso() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+
+def _local_load() -> dict:
+    try:
+        return json.loads(_LOCAL_PATH.read_text("utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _local_write(data: dict) -> None:
+    try:
+        _LOCAL_PATH.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
+    except Exception as err:  # noqa: BLE001
+        log.warning("[cold_store] local write failed: %s", err)
+
+
+def _summarize(row: dict) -> dict:
+    snap = row.get("snapshot") if isinstance(row.get("snapshot"), dict) else {}
+    itin = snap.get("itinerary_manifest", {}) if isinstance(snap, dict) else {}
+    return {
+        "id": row["id"],
+        "session_id": row.get("session_id", ""),
+        "name": row.get("name") or _name_from_snapshot(snap),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+        "origin": itin.get("origin", ""),
+        "destination": itin.get("destination", ""),
+        "block_count": len(itin.get("calendar_blocks") or []),
+    }
 
 
 def _get_client():
@@ -45,34 +87,57 @@ def _get_client():
 
 
 def is_enabled() -> bool:
-    return _get_client() is not None
+    # Always available — Supabase when configured, local JSON file otherwise.
+    return True
 
 
 def save_trip(user_auth_id: str, session_id: str, snapshot: dict,
               name: str = "") -> dict | None:
-    """Insert a new snapshot row. Returns the inserted row, or None if disabled."""
-    client = _get_client()
-    if not client or not user_auth_id:
+    """Insert a new snapshot row. Returns the inserted row, or None on failure."""
+    if not user_auth_id:
         return None
-    payload = {
+    name = name or _name_from_snapshot(snapshot)
+    client = _get_client()
+    if client:
+        payload = {
+            "user_auth_id": user_auth_id,
+            "session_id": session_id,
+            "name": name,
+            "snapshot": snapshot,
+        }
+        try:
+            res = client.table(_TABLE).insert(payload).execute()
+        except Exception as err:  # noqa: BLE001
+            log.warning("[cold_store] save_trip failed: %s", err)
+            return None
+        rows = getattr(res, "data", None) or []
+        return rows[0] if rows else None
+
+    # Local fallback (no Supabase configured).
+    now = _now_iso()
+    row = {
+        "id": uuid.uuid4().hex,
         "user_auth_id": user_auth_id,
         "session_id": session_id,
-        "name": name or _name_from_snapshot(snapshot),
+        "name": name,
         "snapshot": snapshot,
+        "created_at": now,
+        "updated_at": now,
     }
-    try:
-        res = client.table(_TABLE).insert(payload).execute()
-    except Exception as err:  # noqa: BLE001
-        log.warning("[cold_store] save_trip failed: %s", err)
-        return None
-    rows = getattr(res, "data", None) or []
-    return rows[0] if rows else None
+    data = _local_load()
+    data.setdefault(user_auth_id, []).append(row)
+    _local_write(data)
+    return _summarize(row)
 
 
 def list_trips(user_auth_id: str, limit: int = 50) -> list[dict]:
-    client = _get_client()
-    if not client or not user_auth_id:
+    if not user_auth_id:
         return []
+    client = _get_client()
+    if not client:
+        rows = _local_load().get(user_auth_id, [])
+        rows = sorted(rows, key=lambda r: r.get("updated_at", ""), reverse=True)
+        return [_summarize(r) for r in rows[:limit]]
     try:
         res = (
             client.table(_TABLE)
@@ -106,8 +171,13 @@ def list_trips(user_auth_id: str, limit: int = 50) -> list[dict]:
 
 
 def load_trip(user_auth_id: str, trip_id: str) -> dict | None:
+    if not user_auth_id:
+        return None
     client = _get_client()
-    if not client or not user_auth_id:
+    if not client:
+        for r in _local_load().get(user_auth_id, []):
+            if r.get("id") == trip_id:
+                return r
         return None
     try:
         res = (
@@ -126,8 +196,17 @@ def load_trip(user_auth_id: str, trip_id: str) -> dict | None:
 
 def rename_trip(user_auth_id: str, trip_id: str, name: str) -> dict | None:
     """Update a saved trip's display name. Returns the updated row, or None."""
+    if not user_auth_id or not name.strip():
+        return None
     client = _get_client()
-    if not client or not user_auth_id or not name.strip():
+    if not client:
+        data = _local_load()
+        for r in data.get(user_auth_id, []):
+            if r.get("id") == trip_id:
+                r["name"] = name.strip()
+                r["updated_at"] = _now_iso()
+                _local_write(data)
+                return _summarize(r)
         return None
     try:
         res = (

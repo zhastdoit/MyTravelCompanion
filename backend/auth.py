@@ -145,16 +145,20 @@ def require_user(authorization: Optional[str] = Header(default=None)) -> AuthUse
     token = _parse_bearer(authorization)
     if not auth_enabled():
         if token:
-            # Best-effort: caller passed a token even though server has no secret.
-            # We can't verify it; just record the unverified `sub` for analytics
-            # without trusting it.
+            # Offline/dev mode: no Supabase verifier is configured, but the
+            # frontend forwarded a real Supabase token. We can't verify the
+            # signature, so trust its `sub` as a stable per-user key — enough to
+            # scope local trip-saving to this user. Configure SUPABASE_URL /
+            # SUPABASE_JWT_SECRET for *verified* auth in production.
             try:
                 claims = jwt.decode(token, options={"verify_signature": False})
-                return AuthUser(
-                    user_auth_id=str(claims.get("sub", "")) or "anonymous",
-                    email=str(claims.get("email", "")),
-                    is_anonymous=True,
-                )
+                sub = str(claims.get("sub", ""))
+                if sub:
+                    return AuthUser(
+                        user_auth_id=sub,
+                        email=str(claims.get("email", "")),
+                        is_anonymous=False,
+                    )
             except Exception:  # noqa: BLE001
                 pass
         return AuthUser(user_auth_id="", is_anonymous=True)
