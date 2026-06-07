@@ -1,54 +1,79 @@
-# ✈️ MyTravelCompanion — TripCrew
+# ✈️ SyncTrip — Multi-Agent Travel Orchestration
 
-A **multi-agent travel-planning group chat**. Instead of one chatbot, you get a *team* of
-AI agents that plan your trip together — visibly, in a chat room you're also part of. You can
-`@`-mention any agent or jump in between turns to steer them.
+A team of AI agents that **plan, book, and adapt a trip together** — negotiating a group's
+conflicting preferences, building an itinerary, and re-routing in real time when the weather
+turns. You talk to the crew in a chat, watch them hand off to each other, and `@`-mention any
+agent directly.
 
-Built for a 6-hour hackathon. Stack: **OpenAI** (agents + LLM-as-judge) · **W&B Weave**
-(tracing + evaluation + leaderboard) · built in **Cursor**.
+Hackathon build. **Stack:** Next.js + **CopilotKit** (frontend) · **FastAPI** + **OpenAI**
+native tool-calling/handoff (agent backend) · **Redis** (hot state) + **Supabase** (cold) ·
+**W&B Weave** (observability) · built in **Cursor**.
 
-## The idea
+## The agent cast
+
+| Agent | Role |
+|---|---|
+| 🧭 **Supervisor** | routes the request to the right specialist (does no work itself) |
+| 🤝 **Diplomat** | negotiates the group's conflicting budgets/preferences into one plan |
+| 🧰 **Logistician** | pulls flights + attractions, fills the itinerary, surfaces a booking form |
+| 🌦️ **Sentinel** | watches live weather against outdoor plans |
+| 🔀 **Reshuffler** | swaps rained-out activities for indoor alternatives, notifies the traveler |
+
+Full character sheet: [`docs/AGENTS.md`](docs/AGENTS.md). Architecture & contracts:
+[`DESIGN.md`](DESIGN.md). Live progress: [`STATUS.md`](STATUS.md).
+
+## How it works
+
+Agents coordinate through one shared JSON document, **`TripState`** (the contract between the
+backend brain and the CopilotKit UI). The Supervisor routes via `transfer_to_*` tool calls;
+specialists read/write `TripState`; their state updates drive **generative UI** (forms, maps,
+notifications) on the frontend.
 
 ```
-        🧠 Planner  →  splits the request & budget, delegates
-   ✈️ Flights  🏨 Hotels  🍜 Spots & Food  📅 Itinerary   →  do the work in parallel
-        🕵️ Critic   →  audits the draft (budget? conflicts? preferences?) and sends it back to rework
-        🎯 Router   →  decides who speaks next & handles your interjections
+Browser (Next.js + CopilotKit)  ──►  CopilotRuntime gateway  ──►  FastAPI agent server
+   renders forms/map from TripState        (Next.js API route)        Supervisor → specialists
+                                                                       OpenAI handoff · Weave · Redis
 ```
 
-The differentiator isn't "an agent that plans trips" — it's **how we evaluate a *team* of agents**:
+## What's working today (backend)
 
-- **Outcome** — does the plan meet the constraints? (budget, no time conflicts, preference match) — objective, code-checked
-- **Process** — how many collaboration rounds, tokens, cost — from Weave traces
-- **Attribution** — when something fails, *which agent* caused it (LLM-as-judge over the trace)
-- **Ablation** — run *with* vs *without* the Critic to prove the multi-agent setup actually helps
+- ✅ **Real OpenAI multi-agent handoff** — Supervisor → Diplomat → Logistician → Sentinel → Reshuffler
+- ✅ **Group negotiation** — conflicting budgets resolved to one agreed plan
+- ✅ **Live weather reroute** — outdoor → indoor swap with a notification
+- ✅ **`@`-mention routing** — address any agent directly
+- ✅ **Per-agent chat lines** (`chat[]`) — the crew "talks" on screen as it works
+- ✅ **Structured form data** — `flight_options` with **booking links** + `form_payload` for CopilotKit forms; `POST /api/select` records the choice
+- ✅ **$1 / session spend cap** + per-turn **token tracking**
+- ✅ **Loop guards** — caps + ping-pong detection; falls back to *"&lt;name&gt;, what do you think?"*
+- ✅ **Mock-LLM mode** — runs free with no key/infra (deterministic)
 
-## What's in here
+## Run it
 
-| File | What it is |
-|------|------------|
-| `index.html` | **Interactive demo** — the live group chat. Agents stream in, the Critic catches problems, the eval scorecard updates in real time, and you can interject (`@Hotels add an onsen`). |
-| `design.html` / `design.png` | The static design mockup of the UI. |
-
-## Run the demo
-
-It's a single self-contained HTML file — no build step.
-
+**Backend (agent brain):**
 ```bash
-python3 -m http.server 8755
-# then open http://localhost:8755/index.html
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env          # set USE_MOCK_LLM=1 (free) or 0 + OPENAI_API_KEY
+uvicorn main:app --reload --port 8000   # → http://localhost:8000/docs
 ```
 
-Try typing in the composer once the plan finalizes:
-- `@Hotels add an onsen` — Hotels swaps to a Hakone ryokan, Critic re-checks, Flights finds a cheaper return → score climbs to 9.1
-- `@Planner make it cheaper` — the team trims the plan back under budget
+**Frontend (CopilotKit dashboard):**
+```bash
+cd frontend/travel
+BACKEND_URL=http://localhost:8000 npm run dev
+```
 
-> Note: the current `index.html` is a **front-end simulation** of the multi-agent flow (so it
-> runs offline and demos reliably). The real OpenAI + Weave backend plugs in behind the same UI.
+**Quick test of the multi-agent chat:**
+```bash
+cd backend && python demo_rounds.py     # 3 rounds, prints handoffs + tokens + cost
+```
+
+More backend detail: [`backend/README.md`](backend/README.md).
 
 ## Roadmap
 
-- [ ] Real backend: FastAPI orchestrator (Router → Planner → Workers → Critic) on OpenAI function calling
-- [ ] `@weave.op()` tracing on every agent call + a Weave `Evaluation` for the scorecard
-- [ ] `TravelDataProvider` interface — mock data now, real flight/hotel/POI APIs later
-- [ ] True streaming + mid-stream interruption (currently lightweight: interject at turn boundaries)
+- [ ] Frontend renders `form_payload` forms + selection (ryw)
+- [ ] Swap mock tools for real APIs (OpenWeather first — free & live; then Amadeus/Geoapify)
+- [ ] Weave eval metrics (JSON adherence, routing latency, API resiliency)
+- [ ] Supabase cold-storage "Save Trip"

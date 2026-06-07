@@ -8,18 +8,21 @@ Snapshot of what's working and what's next. **Legend:** 🟢 done · 🟡 in pro
 
 | Area | Owner | Status | Notes |
 |------|-------|:------:|-------|
-| Agent server (FastAPI) | you | 🟢 | `/api/chat`, `/api/state`, `/health` live |
-| OpenAI-native handoff engine | you | 🟢 | `run_turn()` — full chain proven in mock mode |
+| Agent server (FastAPI) | you | 🟢 | `/api/chat`, `/api/state`, `/api/select`, `/api/cost`, `/health` |
+| OpenAI-native handoff engine | you | 🟢 | `run_turn()` — verified live with real models |
 | 5-agent cast | you | 🟢 | Supervisor / Diplomat / Logistician / Sentinel / Reshuffler |
-| `TripState` shared contract | both | 🟢 | Pydantic models = DESIGN.md §4 |
+| Group negotiation + weather reroute | you | 🟢 | conflicting budgets → one plan; outdoor→indoor swap |
+| `@`-mention routing | you | 🟢 | address any agent directly |
+| Per-agent chat lines (`chat[]`) | you | 🟢 | crew "talks" on screen as it works |
+| Structured `form_payload` + booking links | you | 🟢 | `flight_options[]` + `/api/select` selection round-trip |
+| `$1`/session cost cap + token tracking | you | 🟢 | metered per session; per-turn token counts |
+| Loop guards + human fallback | you | 🟢 | caps + ping-pong detection → "&lt;name&gt;, what do you think?" |
+| Weave tracing | you | 🟡 | `@op` shim wired; eval metrics not built |
 | Mock travel tools | you | 🟡 | Amadeus/Geoapify/OpenWeather mocked behind real names |
-| Redis HOT store | you | 🟡 | works; **in-memory fallback** until Redis is up |
-| Real OpenAI mode | you | 🟡 | code written, untested (needs key) |
-| Weave tracing + evals | you | 🟡 | `@op` shim in place; metrics not built |
-| Next.js app | ryw | 🟡 | scaffolded at `frontend/travel/`, CopilotKit not wired |
-| CopilotKit ↔ backend bridge | both | ⬜ | **highest-risk seam** |
+| Redis HOT store | you | 🟡 | works; in-memory fallback until Redis is up |
+| Next.js + CopilotKit app | ryw | 🟡 | gateway wired; forms render from `form_payload` (in progress) |
+| Real external APIs | you | ⬜ | swap mock internals in `tools.py` |
 | Supabase COLD (auth + save) | ryw | ⬜ | |
-| Real external APIs | you | ⬜ | swap mocks in `tools.py` |
 
 ---
 
@@ -28,20 +31,20 @@ Snapshot of what's working and what's next. **Legend:** 🟢 done · 🟡 in pro
 ```mermaid
 flowchart TB
   subgraph FE["Frontend — ryw"]
-    UI["Next.js + CopilotKit<br/>chat + generative UI"]:::todo
-    GW["CopilotRuntime gateway<br/>/api/copilotkit"]:::todo
+    UI["Next.js + CopilotKit<br/>chat · forms · map"]:::wip
+    GW["CopilotRuntime gateway<br/>/api/copilotkit → /api/chat"]:::wip
   end
   subgraph BE["Agent Server — you"]
-    API["FastAPI<br/>/api/chat · /api/state"]:::done
-    ORCH["Handoff engine<br/>run_turn()"]:::done
+    API["FastAPI<br/>/api/chat · /api/state · /api/select · /api/cost"]:::done
+    ORCH["Handoff engine<br/>run_turn() · @-mention · loop guards · cost cap"]:::done
     AG["5 agents<br/>Supervisor · Diplomat · Logistician · Sentinel · Reshuffler"]:::done
-    TOOLS["Tools<br/>mocked Amadeus / Geoapify / Weather"]:::wip
+    TOOLS["Tools<br/>mocked Amadeus / Geoapify / Weather (+ booking links)"]:::wip
   end
-  STATE["TripState<br/>(shared JSON contract)"]:::done
+  STATE["TripState<br/>constraints · itinerary · flight_options · form_payload"]:::done
   REDIS["Redis HOT<br/>(in-mem fallback now)"]:::wip
   SUPA["Supabase COLD<br/>auth + saved trips"]:::todo
-  OAI["OpenAI SDK<br/>(mock now)"]:::wip
-  WEAVE["W&B Weave<br/>(shim only)"]:::wip
+  OAI["OpenAI SDK<br/>native tool-calling/handoff"]:::done
+  WEAVE["W&B Weave<br/>(shim wired)"]:::wip
 
   UI --> GW --> API
   API --> ORCH --> AG --> TOOLS
@@ -58,9 +61,7 @@ flowchart TB
 
 ---
 
-## 3. What's proven working (mock-LLM, no keys)
-
-Two user turns drive the whole crew and mutate `TripState`:
+## 3. Proven flows (verified live with real OpenAI)
 
 ```mermaid
 sequenceDiagram
@@ -72,23 +73,21 @@ sequenceDiagram
   participant R as 🔀 Reshuffler
   participant T as 📄 TripState
 
-  Note over U,T: Turn 1 — plan the trip
-  U->>S: "Plan SFO→Tokyo, $1500, food + history"
+  Note over U,T: Plan — group with conflicting budgets ($1200 vs $2000)
+  U->>S: plan SFO→Tokyo, food + temples
   S->>D: transfer (constraints missing)
-  D->>T: update_constraints(budget, pacing, tags, route)
-  D->>S: transfer back
+  D->>T: update_constraints → settles on $1200
+  D->>S: back
   S->>L: transfer (no itinerary)
-  L->>T: query_amadeus + query_geoapify (3 POIs)
-  L->>S: transfer back
-  S-->>U: "All set ✅"
+  L->>T: query_amadeus (flight_options + links) + query_geoapify (3 POIs)
+  L-->>U: itinerary + FLIGHT_PICKER form
 
-  Note over U,T: Turn 2 — live disruption
-  U->>S: "Will weather ruin our outdoor plans?"
+  Note over U,T: Adapt — live weather disruption
+  U->>S: will weather ruin outdoor plans?
   S->>W: transfer
-  W->>T: check_weather → RAIN on Tsukiji
+  W->>T: check_weather → rain on an OUTDOOR block
   W->>R: transfer
   R->>T: reshuffle OUTDOOR→INDOOR + notify
-  R->>S: transfer back
 ```
 
 ---
@@ -97,34 +96,31 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  A["🟢 Agent pipe<br/>(mock)"]:::done
+  A["🟢 Multi-agent brain<br/>(real OpenAI)"]:::done
 
-  A --> B["🟡 Real OpenAI<br/>USE_MOCK_LLM=0 + key"]:::next
-  B --> C["🟡 Weave tracing<br/>+ eval metrics"]:::next
-  A --> D["⬜ CopilotKit bridge<br/>state → generative UI"]:::todo
-  D --> E["⬜ FE forms + map<br/>FLIGHT_PICKER / GROUP_AGREEMENT"]:::todo
-  A --> F["⬜ Real APIs<br/>Amadeus · Geoapify · OpenWeather"]:::todo
-  A --> G["⬜ Redis + Supabase<br/>hot + cold persistence"]:::todo
+  A --> B["🟡 CopilotKit forms<br/>render form_payload + select"]:::next
+  A --> C["⬜ Real APIs<br/>OpenWeather → Amadeus/Geoapify"]:::todo
+  A --> D["🟡 Weave eval metrics<br/>JSON adherence · latency"]:::next
+  A --> E["⬜ Redis + Supabase<br/>hot + cold persistence"]:::todo
 
   classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d;
   classDef next fill:#fef9c3,stroke:#d97706,color:#7c2d12;
   classDef todo fill:#f1f5f9,stroke:#94a3b8,color:#334155;
 ```
 
-### Priority order
-1. **Real OpenAI** (you) — set `USE_MOCK_LLM=0` + `OPENAI_API_KEY`; verify the handoff loop with a live model.
-2. **CopilotKit bridge** (you + ryw) — *de-risk first*: drive **one** generative-UI form from `copilot_ui_hooks.active_form_component` end-to-end before scaling.
-3. **Weave** (you) — turn on `WEAVE_PROJECT`; build eval metrics (JSON adherence, routing latency, API resiliency).
-4. **Real external APIs** (you) — replace mocks in `tools.py` (same function names).
-5. **Persistence** — Redis HOT (you) + Supabase COLD on "Save Trip" (ryw).
+### Priority
+1. **CopilotKit forms** (ryw) — render `FLIGHT_PICKER` / `GROUP_AGREEMENT` from `form_payload`; wire `POST /api/select`.
+2. **One real API** (you) — OpenWeather is free + makes the reroute genuinely live.
+3. **Weave eval metrics** (you) — the observability/scoring story.
+4. **Persistence** — Redis HOT + Supabase "Save Trip".
 
 ---
 
-## 5. Run it
+## 5. Run / test
 
 ```bash
-cd backend && python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python test_pipe.py                     # smoke test (handoff trail)
+cd backend && source .venv/bin/activate
+python test_pipe.py                     # free smoke test
+python demo_rounds.py                   # 3-round chat: handoffs + tokens + cost
 uvicorn main:app --reload --port 8000   # → http://localhost:8000/docs
 ```

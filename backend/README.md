@@ -27,8 +27,11 @@ curl -s localhost:8000/api/chat -H 'content-type: application/json' \
 | Var | Default | Effect |
 |-----|---------|--------|
 | `USE_MOCK_LLM` | `1` | `1` = deterministic mock (no key). `0` = real OpenAI (`OPENAI_API_KEY`). |
+| `SESSION_USD_CAP` | `1.0` | Hard per-session spend cap (USD); agents stop once a session crosses it. |
+| `MODEL_SMART` / `MODEL_FAST` | `gpt-4o` / `gpt-4o-mini` | Models for reasoning vs routing/monitoring agents. |
 | `REDIS_URL` | `redis://localhost:6379` | HOT `TripState` store; **falls back to in-memory** if unreachable. |
 | `WEAVE_PROJECT` | unset | Set to `entity/synctrip` to enable `@op` tracing in Weave. |
+| `ALLOWED_ORIGIN` | `http://localhost:3000` | CORS; comma-separated list or `*` (dev only). |
 
 ## Layout
 
@@ -40,16 +43,28 @@ curl -s localhost:8000/api/chat -H 'content-type: application/json' \
 | `tools.py` | Work tools + mocked Amadeus/Geoapify/OpenWeather + `transfer_*` |
 | `orchestrator.py` | The handoff engine (mock + real OpenAI), `run_turn()` |
 | `obs.py` | Weave `@op` shim (optional) |
-| `main.py` | FastAPI endpoints (`/api/chat`, `/api/state`, `/health`) |
+| `cost.py` | Per-session spend cap + token metering |
+| `main.py` | FastAPI endpoints |
 | `test_pipe.py` | End-to-end smoke test (in-process) |
 | `test_http.py` | FastAPI `TestClient` smokes for the HTTP surface (run with `pytest`) |
+| `demo_rounds.py` | 3-round live driver — prints handoffs + tokens + cost |
 
 ## Endpoints
 
-- `POST /api/chat` `{session_id, message, user_auth_id?}` → `{reply, active_agent, trail, state}`
+- `POST /api/chat` `{session_id, message, user_auth_id?, user_name?}` →
+  `{reply, active_agent, entry_agent, trail, chat[], state, tokens_turn, tokens_session, usd_spent, usd_cap}`
+  - `chat[]` — per-agent lines (`{agent, emoji, name, text}`) to render the crew talking
+  - `trail` — structured handoff/tool log; `entry_agent` — where the turn started (`@`-mention aware)
+- `POST /api/select/{sid}` `{flight_id}` → records the chosen flight, clears the form
 - `GET /api/state/{sid}` → current `TripState`
-- `POST /api/reset/{sid}` → clear conversation
-- `GET /health` → mode + store backend
+- `GET /api/cost/{sid}` → `{usd_spent, usd_cap, usd_remaining, over_cap}`
+- `POST /api/reset/{sid}` → clear conversation + cost ledger
+- `GET /health` → mode + store + cap
+
+### Generative-UI signals (in `TripState.copilot_ui_hooks`)
+- `active_form_component` — which form (`FLIGHT_PICKER` / `GROUP_AGREEMENT` / `NONE`)
+- `form_payload` — that form's data (FLIGHT_PICKER → `{title, options:[…book_url…]}`)
+- `system_notifications` — toast strings (e.g. weather reroute)
 
 ## Integration with the Next.js frontend
 
