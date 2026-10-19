@@ -233,7 +233,9 @@ AGENTS: dict[str, Agent] = {
             "`query_amadeus` ONCE with origin and destination from "
             "`itinerary_manifest`. Skip if a TRANSIT block already exists.\n"
             "3. **Compose a COMPLETE day for EACH day in "
-            "0..duration_days-1.** A complete day is 5+ blocks for "
+            "0..duration_days-1 — call `add_day_plan` ONCE PER DAY, "
+            "passing all of that day's stops in `activities`.** "
+            "A complete day is 5+ blocks for "
             "RELAXED, 7+ for INTENSE, organised across these 7 time slots:\n"
             "   • `breakfast` (08:30) — café/bakery in the day's "
             "neighborhood.\n"
@@ -278,19 +280,24 @@ AGENTS: dict[str, Agent] = {
             "the quality bar isn't met, say so explicitly.\n\n"
             "Hard rules:\n"
             "• `query_amadeus` and `query_geoapify` may each be called AT "
-            "MOST ONCE per turn. `add_activity_block` is meant to be "
-            "called MANY times — once per activity placement, expect "
-            "5×duration_days to 7×duration_days calls per full plan. "
+            "MOST ONCE per turn. `add_day_plan` is called once per day "
+            "(duration_days calls per full plan). "
             "`web_search_preview` may be called AT MOST ONCE per turn.\n"
-            "• Prefer `add_activity_block` over `query_geoapify` always. "
-            "`query_geoapify` is a graceful-degradation fallback only; "
+            "• Prefer `add_day_plan` (one call per day) over "
+            "`add_activity_block`; use `add_activity_block` only to patch a "
+            "single missing stop. Never use `query_geoapify` when you can "
+            "name real places.\n"
+            "• NEVER stop to wait for the user's flight choice — the flight "
+            "picker is non-blocking. Always finish EVERY day of the "
+            "itinerary in this same turn, then hand back.\n"
+            "• `query_geoapify` is a graceful-degradation fallback only; "
             "it produces a generic 5-block day with no specificity.\n"
             "• NEVER fabricate calendar_blocks in chat text. The tools own "
             "the writes; your replies summarise them.\n"
             "• If `compiled_constraints.budget_ceiling_usd == 0` or "
             "`destination` is empty, do NOT call any tool — transfer "
             "straight back to the supervisor with a one-line note."),
-        work_tools=["query_amadeus", "query_geoapify", "add_activity_block"],
+        work_tools=["query_amadeus", "query_geoapify", "add_day_plan", "add_activity_block"],
         can_transfer_to=["supervisor"],
         web_search=True),
 

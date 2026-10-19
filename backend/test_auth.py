@@ -139,3 +139,13 @@ def test_disabled_auth_extracts_unverified_sub_when_token_present(
     body = res.json()
     assert body["sub"] == "user-demo"
     assert body["anonymous"] is True
+
+
+def test_dev_bypass_runs_tokenless_requests_as_guest(monkeypatch, app: FastAPI):
+    """DEV_AUTH_BYPASS=1 (local only) lets the app run without login."""
+    monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.setenv("DEV_AUTH_BYPASS", "1")
+    res = TestClient(app).get("/me")
+    assert res.status_code == 200
+    assert res.json() == {"sub": "guest-local", "anonymous": False}

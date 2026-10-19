@@ -144,28 +144,29 @@ def require_user(authorization: Optional[str] = Header(default=None)) -> AuthUse
     """
     token = _parse_bearer(authorization)
     if not auth_enabled():
+        # Opt-in local dev bypass (DEV_AUTH_BYPASS=1). Off by default, so an
+        # unconfigured backend stays anonymous and visitors never share a
+        # bucket of saved trips.
+        bypass = os.getenv("DEV_AUTH_BYPASS", "").strip().lower() in ("1", "true")
         if token:
-            # Offline/dev mode: no Supabase verifier is configured, but the
-            # frontend forwarded a real Supabase token. We can't verify the
-            # signature, so trust its `sub` as a stable per-user key — enough to
-            # scope local trip-saving to this user. Configure SUPABASE_URL /
-            # SUPABASE_JWT_SECRET for *verified* auth in production.
+            # No verifier configured: we can't check the signature. Surface the
+            # unverified `sub` (to scope state), but only *trust* it as a
+            # signed-in user when the dev bypass is on.
             try:
                 claims = jwt.decode(token, options={"verify_signature": False})
                 sub = str(claims.get("sub", ""))
                 if sub:
-                    return AuthUser(
-                        user_auth_id=sub,
-                        email=str(claims.get("email", "")),
-                        is_anonymous=False,
-                    )
+                    return AuthUser(user_auth_id=sub,
+                                    email=str(claims.get("email", "")),
+                                    is_anonymous=not bypass)
             except Exception:  # noqa: BLE001
                 pass
-        # No token in offline/dev mode: run as a single shared guest so the app
-        # (incl. save/list trips) works without login. Never reached once a
-        # Supabase verifier is configured (auth_enabled() is then True).
-        return AuthUser(user_auth_id="guest-local", email="guest@local",
-                        is_anonymous=False)
+        if bypass:
+            # No token at all (NEXT_PUBLIC_SKIP_AUTH guest mode): run as a
+            # single shared local guest so save/list trips work without login.
+            return AuthUser(user_auth_id="guest-local", email="guest@local",
+                            is_anonymous=False)
+        return AuthUser(user_auth_id="", is_anonymous=True)
 
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,

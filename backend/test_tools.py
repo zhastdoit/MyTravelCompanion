@@ -115,11 +115,13 @@ def test_query_geoapify_fallback_uses_destination_specific_seed():
         assert 48 < lat < 49 and 2 < lon < 3
 
 
-def test_query_geoapify_unknown_destination_uses_tokyo_seed():
+def test_query_geoapify_unknown_destination_never_fabricates_tokyo():
+    """An unmapped city must not be filled with another city's landmarks."""
     state = _trip(destination="Atlantis")
     tools.query_geoapify(state, tags=["food"])
     blocks = state.itinerary_manifest.calendar_blocks
-    assert any("Tsukiji" in b.activity_name for b in blocks)
+    assert not any("Tsukiji" in b.activity_name for b in blocks)
+    assert blocks == []
 
 
 @respx.mock
@@ -173,22 +175,32 @@ def test_query_geoapify_geocode_failure_falls_back_to_seed(monkeypatch):
                for b in state.itinerary_manifest.calendar_blocks)
 
 
-def test_query_geoapify_fallback_spreads_blocks_across_days():
-    """Multi-day duration must produce blocks on distinct calendar dates."""
+def test_query_geoapify_fallback_never_repeats_places():
+    """The fixture fallback uses each place once, categorised by what it is."""
     state = _trip(destination="Tokyo")
     state.group_profile.compiled_constraints.duration_days = 3
     state.group_profile.compiled_constraints.start_date = "2026-07-15"
     tools.query_geoapify(state, tags=["food", "historic", "modern"])
     blocks = state.itinerary_manifest.calendar_blocks
-    # 3 days × 5 fallback slots (breakfast/morning/lunch/afternoon/dinner)
-    assert len(blocks) == 15
+    names = [b.activity_name for b in blocks]
+    # Never recycle a place to pad the schedule.
+    assert len(names) == len(set(names))
+    # Categories follow what the place is, not its time slot.
+    by_name = {b.activity_name: b.category for b in blocks}
+    assert by_name["Tsukiji Outer Market"] == "MEAL"
+    assert by_name["Senso-ji Temple"] == "SIGHT"
+
+
+def test_query_geoapify_fallback_spreads_larger_fixture_across_days():
+    """With enough distinct places, the fallback fills multiple days."""
+    state = _trip(destination="Seattle")
+    state.group_profile.compiled_constraints.duration_days = 3
+    state.group_profile.compiled_constraints.start_date = "2026-07-15"
+    tools.query_geoapify(state, tags=["food"])
+    blocks = state.itinerary_manifest.calendar_blocks
     dates = sorted({b.timestamp_start[:10] for b in blocks})
     assert dates == ["2026-07-15", "2026-07-16", "2026-07-17"]
-    for date in dates:
-        per_day = [b for b in blocks if b.timestamp_start.startswith(date)]
-        assert len(per_day) == 5
-        hours = sorted({b.timestamp_start[11:13] for b in per_day})
-        assert hours == ["08", "10", "12", "14", "19"]
+    assert len({b.activity_name for b in blocks}) == len(blocks)
 
 
 @respx.mock
@@ -386,3 +398,19 @@ def test_reshuffle_block_noop_when_no_outdoor():
         activity_name="Louvre", type="INDOOR", coordinates=[48.8606, 2.3376]))
     msg = tools.reshuffle_block(state)
     assert "No OUTDOOR block" in msg
+
+
+def test_add_day_plan_places_a_whole_day_in_one_call():
+    """The batched composer places every stop of a day in a single call."""
+    state = _trip(destination="Tokyo")
+    state.group_profile.compiled_constraints.start_date = "2026-07-15"
+    msg = tools.add_day_plan(state, day_index=1, neighborhood="Asakusa", activities=[
+        {"name": "Senso-ji Temple", "time_slot": "morning", "type": "OUTDOOR", "category": "SIGHT"},
+        {"name": "Asakusa Imahan", "time_slot": "lunch", "type": "INDOOR", "category": "MEAL"},
+        {"name": "Kappabashi Street", "time_slot": "afternoon", "type": "OUTDOOR", "category": "SHOPPING"},
+    ])
+    blocks = state.itinerary_manifest.calendar_blocks
+    assert [b.activity_name for b in blocks] == ["Senso-ji Temple", "Asakusa Imahan", "Kappabashi Street"]
+    assert {b.timestamp_start[:10] for b in blocks} == {"2026-07-16"}
+    assert [b.category for b in blocks] == ["SIGHT", "MEAL", "SHOPPING"]
+    assert "placed 3" in msg

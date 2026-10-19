@@ -34,7 +34,7 @@ LOOP_LIMIT = 4          # consecutive handoffs with no productive work => spinni
 # Tools the Logistician composer fans out: each call mutates state with a
 # DIFFERENT result, so the executed-set "you already called this" guard
 # would defeat the day-by-day flow. Skip the guard for these.
-REPEATABLE_TOOLS: frozenset[str] = frozenset({"add_activity_block"})
+REPEATABLE_TOOLS: frozenset[str] = frozenset({"add_activity_block", "add_day_plan"})
 RETRYABLE_OPENAI_ERRORS = ("APITimeoutError", "APIConnectionError", "InternalServerError",
                            "RateLimitError")
 RETRY_BACKOFFS = (0.5, 1.5)  # seconds; one retry, then a slower retry, then give up
@@ -80,7 +80,7 @@ AGENT_META = {
     "user":        {"name": "You", "role": "", "emoji": "🧑", "avatar": "", "desc": ""},
 }
 _TOOL_ICON = {"update_constraints": "🤝", "query_amadeus": "✈️", "query_geoapify": "📍",
-              "add_activity_block": "📌",
+              "add_activity_block": "📌", "add_day_plan": "🗓️",
               "check_weather": "🌦️", "reshuffle_block": "🔧"}
 
 

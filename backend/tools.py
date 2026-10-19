@@ -914,6 +914,38 @@ def add_activity_block(state: TripState, *, name: str, day_index: int = 0,
             f"'{name}'{where} ({block_type}) at {coords[0]:.4f},{coords[1]:.4f}.")
 
 
+def add_day_plan(state: TripState, *, day_index: int = 0, neighborhood: str = "",
+                 activities: list[dict] | None = None) -> str:
+    """Logistician composer (batched): place a WHOLE day in one call.
+
+    Each activity is {name, time_slot, type, category?, duration_minutes?};
+    they're placed via `add_activity_block`, sharing the day's neighborhood.
+    One call per day instead of one per stop keeps a multi-day plan to a
+    handful of LLM round-trips, so the model finishes the itinerary.
+    """
+    acts = activities or []
+    if not acts:
+        return f"[add_day_plan] D{int(day_index) + 1}: no activities given."
+    placed, failed = [], []
+    for a in acts:
+        if not isinstance(a, dict) or not a.get("name"):
+            continue
+        res = add_activity_block(
+            state, name=str(a["name"]), day_index=int(day_index),
+            time_slot=str(a.get("time_slot") or "morning"),
+            type=str(a.get("type") or "INDOOR"),
+            neighborhood=str(a.get("neighborhood") or neighborhood or ""),
+            duration_minutes=int(a.get("duration_minutes") or 0),
+            category=str(a.get("category") or ""))
+        (placed if res.startswith("[add_activity] D") else failed).append(
+            a["name"] if res.startswith("[add_activity] D") else res)
+    where = f" in {neighborhood}" if neighborhood else ""
+    msg = f"[add_day_plan] D{int(day_index) + 1}{where}: placed {len(placed)} — " + ", ".join(placed)
+    if failed:
+        msg += f" (skipped {len(failed)}: " + "; ".join(failed) + ")"
+    return msg
+
+
 @op(name="tool.query_geoapify")
 def query_geoapify(state: TripState, *, destination: str = "",
                    tags: list[str] | None = None) -> str:
@@ -963,21 +995,27 @@ def query_geoapify(state: TripState, *, destination: str = "",
     seed = _geoapify_fixture_blocks(dest)
     if not seed:
         return f"[Geoapify mock] {dest}: no fixture available."
+    # Never recycle places: each fixture entry is used once, food spots go to
+    # meal slots and everything else to sight slots, categorised by what the
+    # place IS (not by its time slot). A small fixture yields a short, honest
+    # plan instead of the same three stops repeated for a week.
+    meals = [e for e in seed if e[3] == "food"]
+    sights = [e for e in seed if e[3] != "food"]
     added: list[str] = []
-    for i in range(days * len(_FALLBACK_TIME_SLOTS)):
-        name, typ, coords, _tag = seed[i % len(seed)]
-        day = i // len(_FALLBACK_TIME_SLOTS)
-        slot = _FALLBACK_TIME_SLOTS[i % len(_FALLBACK_TIME_SLOTS)]
-        # Cycle index nudges the coords so repeated fixture entries don't
-        # render on top of each other in mock mode.
-        nudge = _hash_jitter(f"{name}|{i}", scale=0.008)
-        spread_coords = [float(coords[0]) + nudge[0], float(coords[1]) + nudge[1]]
-        ts = _block_timestamp(start_iso, day, slot)
-        state.itinerary_manifest.calendar_blocks.append(
-            _make_block(name, typ, spread_coords, ts,
-                        duration_minutes=_DEFAULT_DURATION_BY_SLOT.get(slot, 90),
-                        category=_CATEGORY_BY_SLOT.get(slot, "ACTIVITY")))
-        added.append(f"D{day + 1} {slot}: {name}")
+    day = 0
+    while (meals or sights) and day < days:
+        for slot in _FALLBACK_TIME_SLOTS:
+            queue = meals if slot in ("breakfast", "lunch", "dinner") else sights
+            if not queue:
+                continue
+            name, typ, coords, tag = queue.pop(0)
+            ts = _block_timestamp(start_iso, day, slot)
+            state.itinerary_manifest.calendar_blocks.append(
+                _make_block(name, typ, [float(coords[0]), float(coords[1])], ts,
+                            duration_minutes=_DEFAULT_DURATION_BY_SLOT.get(slot, 90),
+                            category="MEAL" if tag == "food" else "SIGHT"))
+            added.append(f"D{day + 1} {slot}: {name}")
+        day += 1
     return f"[Geoapify mock] {dest}: " + "; ".join(added)
 
 
@@ -1125,6 +1163,7 @@ WORK_TOOLS = {
     "query_amadeus": query_amadeus,
     "query_geoapify": query_geoapify,
     "add_activity_block": add_activity_block,
+    "add_day_plan": add_day_plan,
     "check_weather": check_weather,
     "reshuffle_block": reshuffle_block,
 }
@@ -1218,6 +1257,36 @@ WORK_TOOL_SCHEMAS = {
                              "description": ("Icon hint for the timeline. "
                                              "Defaults from slot when blank.")}},
                 "required": ["name", "day_index", "time_slot"]}}},
+    "add_day_plan": {
+        "type": "function", "function": {
+            "name": "add_day_plan",
+            "description": ("Place a WHOLE day of activities in ONE call (preferred "
+                            "over add_activity_block). Call once per day of the trip. "
+                            "Each activity is a real, named, googleable place."),
+            "parameters": {"type": "object", "properties": {
+                "day_index": {"type": "integer",
+                              "description": "Zero-indexed day of the trip (0 = first day)."},
+                "neighborhood": {"type": "string",
+                                 "description": "The day's anchor neighborhood; biases geocoding and spreads days apart."},
+                "activities": {
+                    "type": "array",
+                    "description": "5-7 stops for this day, in time order.",
+                    "items": {"type": "object", "properties": {
+                        "name": {"type": "string",
+                                 "description": "Specific named place (e.g. 'Sensoji Temple'). No generic category words."},
+                        "time_slot": {"type": "string",
+                                      "enum": ["breakfast", "morning", "lunch", "afternoon",
+                                               "coffee", "dinner", "evening"]},
+                        "type": {"type": "string", "enum": ["INDOOR", "OUTDOOR", "TRANSIT"]},
+                        "category": {"type": "string",
+                                     "enum": ["MEAL", "SIGHT", "ACTIVITY", "REST",
+                                              "NIGHTLIFE", "SHOPPING"]},
+                        "duration_minutes": {"type": "integer"},
+                    }, "required": ["name", "time_slot", "type", "category"]},
+                },
+            }, "required": ["day_index", "activities"]},
+        },
+    },
     "check_weather": {
         "type": "function", "function": {
             "name": "check_weather", "description": "Check weather against OUTDOOR calendar blocks.",
