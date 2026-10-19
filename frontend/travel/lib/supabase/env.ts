@@ -11,6 +11,11 @@ export interface SupabaseEnv {
 }
 
 export const readSupabaseEnv = (): SupabaseEnv | null => {
+  // Dev escape hatch: skip auth entirely and run as a guest. Treats Supabase as
+  // "unconfigured" so the login gates fall through to a fresh trip session.
+  const skip = process.env.NEXT_PUBLIC_SKIP_AUTH;
+  if (skip === "1" || skip === "true") return null;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) return null;

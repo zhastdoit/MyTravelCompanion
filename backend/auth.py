@@ -161,7 +161,11 @@ def require_user(authorization: Optional[str] = Header(default=None)) -> AuthUse
                     )
             except Exception:  # noqa: BLE001
                 pass
-        return AuthUser(user_auth_id="", is_anonymous=True)
+        # No token in offline/dev mode: run as a single shared guest so the app
+        # (incl. save/list trips) works without login. Never reached once a
+        # Supabase verifier is configured (auth_enabled() is then True).
+        return AuthUser(user_auth_id="guest-local", email="guest@local",
+                        is_anonymous=False)
 
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
