@@ -20,7 +20,7 @@ interface ProvidersProps {
  * that env var is only relevant if you swap this for `https://api.cloud.copilotkit.ai`.
  */
 export const Providers = ({ children, threadId }: ProvidersProps) => (
-  <CopilotKit runtimeUrl="/api/copilotkit" threadId={threadId}>
+  <CopilotKit runtimeUrl="/api/copilotkit" threadId={threadId} showDevConsole={false} enableInspector={false}>
     {children}
   </CopilotKit>
 );

@@ -121,3 +121,13 @@ body {
 .mtcMsgRow:hover .copilotKitMessageControls {
   opacity: 0.6;
 }
+
+/* Composer: CopilotKit's auto-resize mis-measures the row height in our docked
+ * layout and writes an inline `height: 360px`, making the empty input eat half
+ * the panel. Size it to its content instead, capped at a few lines. */
+.copilotKitInput textarea {
+  field-sizing: content;
+  height: auto !important;
+  min-height: 1.5rem;
+  max-height: 8rem !important;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId } from "react";
 import {
   AssistantMessage as DefaultAssistantMessage,
   type AssistantMessageProps,
@@ -51,13 +51,13 @@ export const AgentAssistantMessage = (props: AssistantMessageProps) => {
     typeof props.message?.content === "string" ? props.message.content : "";
 
   /**
-   * Resolve the speaker from the message content first (each line is prefixed
-   * with its agent), falling back to whichever agent was active at first
-   * render. Bound once and kept stable for the rest of the session.
+   * Resolve the speaker from the message content on every render (each line
+   * is prefixed with its agent). A one-shot binding at first render got stuck
+   * on "no agent" when a streaming message's content was still empty. Only
+   * prefix-less messages fall back to whichever agent was active.
    */
-  const [boundAgent] = useState<AgentId | null>(() =>
-    bindMessage(messageId, resolveAgentFromContent(content)),
-  );
+  const boundAgent: AgentId | null =
+    resolveAgentFromContent(content) ?? bindMessage(messageId, null);
 
   if (!boundAgent) return <DefaultAssistantMessage {...props} />;
 

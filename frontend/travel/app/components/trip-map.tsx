@@ -27,7 +27,9 @@ interface TripMapProps {
   onSelectBlock?: (id: string) => void;
 }
 
-const FALLBACK_VIEW = { longitude: 2.3522, latitude: 48.8566, zoom: 11 };
+// Neutral world view until stops exist — fitBounds zooms to the real city as
+// soon as the itinerary lands (a hardcoded city here showed Paris for Tokyo).
+const FALLBACK_VIEW = { longitude: 10, latitude: 25, zoom: 1.4 };
 
 // Per-day route palette. Walking legs render dashed, driving legs solid; both
 // share the same hue so the user reads color = day, dash-style = mode.

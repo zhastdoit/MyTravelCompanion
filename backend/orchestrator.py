@@ -649,6 +649,24 @@ def run_turn(session_id: str, user_message: str, user_auth_id: str = "",
         trail.append({"agent": active, "action": "ask_user", "result": reply})
         _say(chat, active, reply)
 
+    # Safety net: the LLM Logistician sometimes surfaces flights and stops to
+    # ask the user, leaving the day-by-day plan empty. Once the Logistician has
+    # engaged and we know the destination, guarantee the itinerary exists by
+    # running the deterministic bulk builder.
+    itin = state.itinerary_manifest
+    logistician_engaged = any(t.get("agent") == "logistician" for t in trail)
+    if logistician_engaged and itin.destination and not itin.calendar_blocks:
+        try:
+            built = WORK_TOOLS["query_geoapify"](state)
+            if itin.calendar_blocks:
+                trail.append({"agent": "logistician", "action": "tool:query_geoapify (auto)",
+                              "result": built})
+                _say(chat, "logistician",
+                     f"📍 I also drafted your day-by-day plan for {itin.destination} — "
+                     f"{len(itin.calendar_blocks)} stops are on the itinerary and map.")
+        except Exception as err:  # noqa: BLE001
+            log.warning("[orchestrator] itinerary safety net failed: %s", err)
+
     # A form submission consumes the form the user answered — but only that one.
     # Retire it so the UI doesn't re-open the same picker. Crucially, if a tool
     # surfaced a DIFFERENT form this same turn (e.g. approving GROUP_AGREEMENT
